@@ -84,9 +84,12 @@ export function computeState(item, logs, settings = DEFAULT_SETTINGS) {
 }
 
 // 모든 항목의 상태 계산
+// 지워진 로그(deleted)는 빼고, 여러 기기에서 합쳐진 로그를 날짜→기록 시각 순으로 정렬해서 계산
 export function computeAll(items, logs, settings) {
   const byItem = new Map();
-  for (const l of logs) {
+  const live = logs.filter((l) => !l.deleted)
+    .sort((a, b) => (a.on < b.on ? -1 : a.on > b.on ? 1 : (a.at || 0) - (b.at || 0)));
+  for (const l of live) {
     if (!byItem.has(l.itemId)) byItem.set(l.itemId, []);
     byItem.get(l.itemId).push(l);
   }

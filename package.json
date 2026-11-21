@@ -1,1 +1,1 @@
-{"type":"module","name":"ebbing-planner","private":true,"scripts":{"test":"node --test test/scheduler.test.js","serve":"npx --yes serve ."}}
+{"type":"module","name":"ebbing-planner","private":true,"scripts":{"test":"node --test test/*.test.js","serve":"npx --yes serve ."}}

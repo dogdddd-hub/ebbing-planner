@@ -2,22 +2,29 @@ import {
   DEFAULT_SETTINGS, localDate, addDays, diffDays, computeAll, todayQueue,
   spreadOverflow, projectDates, parseQuickInput, RATING,
 } from './scheduler.js';
+import { emptyDb, migrate, markDirty, markAllDirty } from './merge.js';
+import * as sync from './sync.js';
 
 // ---------- 저장소 ----------
 const KEY = 'ebbing-planner-v1';
-const SCHEMA = 1;
 
 function load() {
   try {
-    const raw = JSON.parse(localStorage.getItem(KEY));
-    if (raw && raw.schema === SCHEMA) return raw;
+    const m = migrate(JSON.parse(localStorage.getItem(KEY)));
+    if (m) return m;
   } catch (e) { console.warn('load failed', e); }
-  return { schema: SCHEMA, items: [], logs: [], settings: { ...DEFAULT_SETTINGS }, dayOffset: 0 };
+  return emptyDb(DEFAULT_SETTINGS);
 }
 let db = load();
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(db)); }
   catch (e) { toast('저장 실패: 저장 공간을 확인하세요'); }
+  if (db.sync.dirty.length) scheduleSync(1500);
+}
+// 기록을 고칠 때: 수정 시각을 찍고 동기화 대상으로 표시
+function touch(kind, rec) {
+  rec.updatedAt = Math.max(Date.now(), (rec.updatedAt || 0) + 1);
+  markDirty(db, kind, kind === 'settings' ? 'main' : rec.id);
 }
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -43,11 +50,19 @@ function toast(msg, undo) {
 }
 
 // ---------- 동작 ----------
+// 지우기는 실제로 지우지 않고 표시만 (다른 기기에도 전해지도록)
+function undoLogs(ids) {
+  for (const l of db.logs) if (ids.has(l.id) && !l.deleted) { l.deleted = true; touch('log', l); }
+  save();
+}
+
 function addItems(text) {
   const parsed = parseQuickInput(text);
   const t = today();
   for (const p of parsed) {
-    db.items.push({ id: uid(), title: p.title, subject: p.subject, note: '', studiedOn: t, status: 'active', createdAt: Date.now() });
+    const it = { id: uid(), title: p.title, subject: p.subject, note: '', studiedOn: t, status: 'active', createdAt: Date.now() };
+    touch('item', it);
+    db.items.push(it);
   }
   save();
   return parsed.length;
@@ -55,10 +70,11 @@ function addItems(text) {
 
 function review(itemId, rating) {
   const log = { id: uid(), kind: 'review', itemId, on: today(), rating, at: Date.now() };
+  touch('log', log);
   db.logs.push(log);
   save();
   const label = { 1: '잊음', 2: '애매', 3: '기억남' }[rating];
-  toast(`${label} 기록됨`, () => { db.logs = db.logs.filter((l) => l.id !== log.id); save(); });
+  toast(`${label} 기록됨`, () => undoLogs(new Set([log.id])));
 }
 
 function removeItem(itemId) {
@@ -66,8 +82,9 @@ function removeItem(itemId) {
   if (!it) return;
   const prev = it.status;
   it.status = 'deleted';
+  touch('item', it);
   save();
-  toast('삭제됨', () => { it.status = prev; save(); });
+  toast('삭제됨', () => { it.status = prev; touch('item', it); save(); });
 }
 
 // ---------- 렌더링 ----------
@@ -109,7 +126,7 @@ function cardHTML(it, st, t, withRate) {
 
 function renderToday(states, t, s) {
   const q = todayQueue(db.items, states, t, s);
-  const doneToday = db.logs.filter((l) => l.kind === 'review' && l.on === t).length;
+  const doneToday = db.logs.filter((l) => l.kind === 'review' && !l.deleted && l.on === t).length;
   const addedToday = db.items.filter((i) => i.status === 'active' && i.studiedOn === t).length;
   $('#stats').innerHTML = `
     <div><b>${q.now.length + q.overflow.length}</b><span>남은 복습</span></div>
@@ -121,10 +138,11 @@ function renderToday(states, t, s) {
   $('#overflow-text').textContent = `상한(${s.dailyLimit}개)을 넘은 복습 ${q.overflow.length}개가 더 있습니다.`;
   $('#spread-btn').onclick = () => {
     const logs = spreadOverflow(q.overflow, db.items, states, t, s).map((l) => ({ ...l, id: uid(), at: Date.now() }));
+    logs.forEach((l) => touch('log', l));
     db.logs.push(...logs);
     save();
     const ids = new Set(logs.map((l) => l.id));
-    toast(`${logs.length}개를 다음 날들로 옮겼습니다`, () => { db.logs = db.logs.filter((l) => !ids.has(l.id)); save(); });
+    toast(`${logs.length}개를 다음 날들로 옮겼습니다`, () => undoLogs(ids));
     render();
   };
 }
@@ -185,6 +203,7 @@ function renderSubjects(states, t) {
 }
 
 function renderSettings(s) {
+  renderSync();
   $('#set-intervals').value = s.intervals.join(', ');
   $('#set-daystart').value = s.dayStartHour;
   $('#set-limit').value = s.dailyLimit;
@@ -247,6 +266,7 @@ $('#save-settings').onclick = () => {
     dailyLimit: Math.max(1, Number($('#set-limit').value) || 30),
     examDate: $('#set-exam').value || null,
   };
+  touch('settings', db.settings);
   db.dayOffset = Number($('#set-offset').value) || 0;
   save();
   toast('저장됨');
@@ -265,20 +285,130 @@ $('#import-file').onchange = async (e) => {
   const f = e.target.files[0];
   if (!f) return;
   try {
-    const data = JSON.parse(await f.text());
-    if (data.schema !== SCHEMA || !Array.isArray(data.items) || !Array.isArray(data.logs)) throw new Error('형식 불일치');
-    if (!confirm(`항목 ${data.items.length}개, 기록 ${data.logs.length}개로 현재 데이터를 덮어씁니다.`)) return;
-    db = data; save(); toast('가져오기 완료'); render();
+    const data = migrate(JSON.parse(await f.text()));
+    if (!data) throw new Error('형식 불일치');
+    if (!confirm(`항목 ${data.items.length}개, 기록 ${data.logs.length}개로 현재 데이터를 덮어씁니다.` +
+      (syncUser ? '\n동기화 중이므로 서버의 더 최신 기록은 유지되고, 나머지는 다른 기기에도 반영됩니다.' : ''))) return;
+    // 동기화 상태는 새로 시작: 전부 다시 받아 합치고(cursor 없음), 백업 내용은 올릴 대상으로
+    data.sync = { cursor: null, dirty: [], lastSyncAt: null };
+    db = data; markAllDirty(db); save(); toast('가져오기 완료'); render();
   } catch (err) { toast('가져오기 실패: ' + err.message); }
   e.target.value = '';
 };
 $('#reset-btn').onclick = () => {
-  if (!confirm('모든 데이터를 지웁니다. 먼저 내보내기 하셨나요?')) return;
+  if (!confirm('이 기기의 모든 데이터를 지웁니다. 먼저 내보내기 하셨나요?' + (syncUser ? '\n(로그인 중이면 서버의 기록을 다시 받아옵니다)' : ''))) return;
   localStorage.removeItem(KEY); db = load(); render(); toast('초기화됨');
 };
 
-// 날짜가 바뀌면(자정/하루 시작 시각) 다시 그림
-document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
+// ---------- 동기화 ----------
+let syncUser = null;      // 로그인한 사용자 (없으면 null)
+let syncState = 'idle';   // idle | syncing | error
+let syncError = '';
+let syncTimer = null, syncAgain = false;
+
+function scheduleSync(ms) {
+  if (!syncUser) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(runSync, ms);
+}
+
+async function runSync(manual = false) {
+  if (!syncUser) return;
+  if (syncState === 'syncing') { syncAgain = true; return; }
+  syncState = 'syncing'; syncError = ''; renderSync();
+  try {
+    const r = await sync.syncNow(() => db, () => {
+      try { localStorage.setItem(KEY, JSON.stringify(db)); } catch {}
+    });
+    syncState = 'idle';
+    if (r.pulled) render();
+    if (manual) toast(`동기화 완료 · 받음 ${r.pulled} · 올림 ${r.pushed}`);
+  } catch (e) {
+    syncState = 'error'; syncError = e.message;
+    if (manual) toast('동기화 실패: ' + e.message);
+  }
+  renderSync();
+  if (syncAgain) { syncAgain = false; scheduleSync(500); }
+}
+
+function renderSync() {
+  const box = $('#sync-box');
+  if (!box) return;
+  const dot = $('#sync-dot');
+  if (dot) {
+    dot.className = syncUser ? syncState : 'off';
+    dot.title = !syncUser ? '동기화 꺼짐' : syncState === 'error' ? '동기화 오류: ' + syncError : syncState === 'syncing' ? '동기화 중' : '동기화됨';
+  }
+  if (view !== 'settings') return;
+  if (!sync.configured()) {
+    box.innerHTML = '<p class="hint">서버가 아직 설정되지 않았습니다 (config.js).</p>';
+    return;
+  }
+  if (!syncUser) {
+    if (box.dataset.mode === 'login') return; // 입력 중인 값 유지
+    box.dataset.mode = 'login';
+    box.innerHTML = `
+      <p class="hint">로그인하면 폰·PC·브라우저의 기록이 자동으로 합쳐집니다. 이 기기의 기존 기록도 함께 올라갑니다.</p>
+      <label>이메일<input id="sync-email" type="email" autocomplete="username"></label>
+      <label>비밀번호 (6자 이상)<input id="sync-pw" type="password" autocomplete="current-password"></label>
+      <div class="row"><button id="sync-login">로그인</button><button id="sync-signup">처음이면 가입</button></div>`;
+    const creds = () => [$('#sync-email').value.trim(), $('#sync-pw').value];
+    $('#sync-login').onclick = () => doLogin(() => sync.signIn(...creds()));
+    $('#sync-signup').onclick = () => doLogin(async () => {
+      const ok = await sync.signUp(...creds());
+      if (!ok) { toast('확인 메일을 보냈습니다. 메일의 링크를 누른 뒤 로그인하세요'); return null; }
+      return sync.currentUser();
+    });
+    return;
+  }
+  box.dataset.mode = 'user';
+  const last = db.sync.lastSyncAt ? new Date(db.sync.lastSyncAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '아직 없음';
+  const status = syncState === 'syncing' ? '동기화 중…' : syncState === 'error' ? `<span class="late">오류: ${esc(syncError)}</span>` : `마지막 동기화 ${last}`;
+  box.innerHTML = `
+    <p class="hint">${esc(syncUser.email || '')} 로그인됨 · ${status}${db.sync.dirty.length ? ` · 올릴 기록 ${db.sync.dirty.length}개` : ''}</p>
+    <div class="row"><button id="sync-now">지금 동기화</button><button id="sync-logout">로그아웃</button></div>`;
+  $('#sync-now').onclick = () => runSync(true);
+  $('#sync-logout').onclick = async () => {
+    if (!confirm('로그아웃합니다. 이 기기의 기록은 그대로 남고, 동기화만 멈춥니다.')) return;
+    try { await sync.signOut(); } catch {}
+    syncUser = null; syncState = 'idle';
+    db.sync = { cursor: null, dirty: [], lastSyncAt: null };
+    save(); renderSync(); toast('로그아웃됨');
+  };
+}
+
+async function doLogin(fn) {
+  const btns = document.querySelectorAll('#sync-box button');
+  btns.forEach((b) => (b.disabled = true));
+  try {
+    const user = await fn();
+    if (user) {
+      syncUser = user;
+      markAllDirty(db); // 이 기기 기록을 전부 올림 (서버에 더 새것이 있으면 그쪽이 이김)
+      db.sync.cursor = null;
+      save();
+      toast('로그인됨 · 동기화를 시작합니다');
+      await runSync(true);
+    }
+  } catch (e) {
+    toast(e.message);
+  }
+  btns.forEach((b) => (b.disabled = false));
+  renderSync();
+}
+
+// 시작할 때 로그인 상태 확인 → 동기화
+(async () => {
+  if (!sync.configured()) return;
+  try { syncUser = await sync.currentUser(); } catch { syncUser = null; }
+  renderSync();
+  if (syncUser) runSync();
+})();
+// 1분마다(화면을 보고 있거나 PC 앱일 때) 다른 기기 변경 받기
+setInterval(() => { if (!document.hidden || window.desktop) runSync(); }, 60000);
+
+// 날짜가 바뀌면(자정/하루 시작 시각) 다시 그림. 다시 볼 때 동기화도
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { render(); scheduleSync(300); } });
 
 if (window.desktop) {
   // PC 앱: 창 제목줄 자리를 비우고, 1분마다 하루가 바뀌었는지 확인

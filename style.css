@@ -83,3 +83,14 @@ nav button.active { color: var(--text); font-weight: 700; }
 
 /* PC 앱(Electron): 헤더를 창 제목줄로 쓰고, 오른쪽 창 버튼 자리를 비움 */
 html.desktop header { -webkit-app-region: drag; user-select: none; padding-right: 150px; justify-content: flex-start; gap: 12px; }
+
+/* 동기화 상태 점: 회색=꺼짐, 초록=동기화됨, 파랑=동기화 중, 빨강=오류 */
+#sync-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-left: 8px; align-self: center; flex: none; }
+#sync-dot.off { display: none; }
+#sync-dot.idle { background: var(--good); }
+#sync-dot.syncing { background: var(--accent); }
+#sync-dot.error { background: var(--forgot); }
+header #today-label { margin-left: auto; }
+html.desktop header #today-label { margin-left: 0; }
+#sync-box .row { margin-top: 4px; }
+button:disabled { opacity: .5; }

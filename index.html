@@ -17,6 +17,7 @@
   <header>
     <h1 id="title">오늘</h1>
     <span id="today-label"></span>
+    <i id="sync-dot" class="off" title="동기화 꺼짐"></i>
   </header>
 
   <main>
@@ -68,8 +69,11 @@
       </label>
       <button id="save-settings">설정 저장</button>
 
+      <h3>동기화</h3>
+      <div id="sync-box"></div>
+
       <h3>백업</h3>
-      <p class="hint">데이터는 이 기기에만 저장됩니다. 주기적으로 내보내기 해두세요.</p>
+      <p class="hint">로그인하지 않으면 데이터는 이 기기에만 저장됩니다. 주기적으로 내보내기 해두세요.</p>
       <div class="row">
         <button id="export-btn">내보내기 (JSON)</button>
         <label class="file-btn">가져오기<input id="import-file" type="file" accept="application/json" hidden></label>

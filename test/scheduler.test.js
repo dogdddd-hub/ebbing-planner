@@ -86,3 +86,16 @@ test('달력 예상일', () => {
   const s = computeState(item, [], S);
   assert.deepEqual(projectDates(item, s, S), ['2026-11-02', '2026-11-05', '2026-11-12', '2026-11-27', '2026-12-27']);
 });
+
+test('지워진 로그는 무시하고, 섞인 순서의 로그는 날짜순으로 계산', () => {
+  const items = [item];
+  const logs = [
+    { ...rv('2026-11-05', 3), at: 2 },
+    { ...rv('2026-11-02', 3), at: 1 },
+    { ...rv('2026-11-05', 1), at: 3, deleted: true },
+  ];
+  const s = computeAll(items, logs, S).get('a');
+  assert.equal(s.step, 2);
+  assert.equal(s.due, '2026-11-12');
+  assert.equal(s.lapses, 0);
+});
