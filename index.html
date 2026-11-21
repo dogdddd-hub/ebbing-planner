@@ -42,6 +42,11 @@
         <button id="spread-btn">다음 날들로 나누기</button>
       </div>
       <p id="empty-today" class="empty hidden">오늘 복습할 항목이 없습니다.</p>
+      <div id="week" class="week-box"></div>
+      <details id="done-box" class="done-box hidden">
+        <summary>오늘 끝낸 복습 <b id="done-count">0</b>개 <span class="hint">· 평가 바꾸기·취소</span></summary>
+        <ul id="done-list" class="list"></ul>
+      </details>
     </section>
 
     <!-- 달력 -->
@@ -58,6 +63,10 @@
 
     <!-- 과목 -->
     <section id="view-subjects" class="view hidden">
+      <div class="subj-search">
+        <input id="subj-search" type="search" placeholder="항목 찾기 (제목·메모)" autocomplete="off">
+        <label class="check"><input type="checkbox" id="show-done"> 완료한 항목도 보기</label>
+      </div>
       <div id="subject-list"></div>
     </section>
 
@@ -111,6 +120,7 @@
       <label>공부한 날<input type="date" id="ed-date" required></label>
       <label>메모<textarea id="ed-note" rows="2" maxlength="1000" placeholder="쪽수, 헷갈린 부분 등"></textarea></label>
       <p id="ed-info" class="hint"></p>
+      <div id="ed-rate" class="ed-rate"></div>
       <div class="dlg-row">
         <button type="button" id="ed-postpone">내일로 미루기</button>
         <button type="button" id="ed-delete" class="danger">삭제</button>

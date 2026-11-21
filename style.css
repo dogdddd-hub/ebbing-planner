@@ -1,4 +1,4 @@
-:root {
+:root { color-scheme: dark;
   --bg: #141414; --card: #1f1f1f; --line: #2e2e2e; --text: #ececec; --sub: #8f8f8f;
   --accent: #4a7dff; --forgot: #e5534b; --hard: #d4a72c; --good: #3fb950;
   --safe-b: env(safe-area-inset-bottom, 0px); --safe-t: env(safe-area-inset-top, 0px);
@@ -140,3 +140,45 @@ dialog input, dialog textarea { background: var(--bg); }
 .dlg-row { display: flex; gap: 8px; margin-top: 10px; }
 .dlg-row button { flex: 1; margin-top: 0; }
 button.primary { background: var(--accent); border-color: var(--accent); }
+
+/* 앞으로 7일 */
+.week-box { margin-top: 16px; }
+.week-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.dday { font-size: 13px; font-weight: 700; color: var(--forgot); }
+.week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.wd { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0 4px; border-radius: 8px; }
+.wd .barv { width: 10px; height: 34px; background: var(--line); border-radius: 99px; display: flex; align-items: flex-end; overflow: hidden; }
+.wd .barv i { display: block; width: 100%; background: var(--accent); border-radius: 99px; }
+.wd b { font-size: 13px; }
+.wd span:last-child { font-size: 11px; color: var(--sub); }
+.wd.over .barv i { background: var(--hard); }
+.wd.over b { color: var(--hard); }
+
+/* 오늘 끝낸 복습 */
+.done-box { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 10px; }
+.done-box summary { cursor: pointer; padding: 4px 0; list-style-position: inside; }
+.done-box .list { margin-top: 8px; gap: 6px; }
+.done-row { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.done-row .dl { display: flex; justify-content: space-between; gap: 8px; }
+.done-row .t { font-size: 14px; word-break: break-all; }
+.rate.small { grid-template-columns: repeat(3, 1fr) auto; margin-top: 6px; }
+.rate.small button { padding: 4px 0; font-size: 12px; opacity: .55; }
+.rate.small button.on { opacity: 1; font-weight: 700; }
+.rate.small .f.on { background: color-mix(in srgb, var(--forgot) 20%, transparent); }
+.rate.small .h.on { background: color-mix(in srgb, var(--hard) 20%, transparent); }
+.rate.small .g.on { background: color-mix(in srgb, var(--good) 20%, transparent); }
+.rate.small .x { padding: 4px 10px; color: var(--sub); }
+
+/* 고치기 창: 미리 복습 */
+.ed-rate { margin-top: 6px; }
+.ed-rate .rate { margin-top: 4px; }
+.rate.one { grid-template-columns: 1fr; }
+
+/* 과목 화면: 찾기·접기 */
+.subj-search { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.check { display: flex; align-items: center; gap: 6px; color: var(--sub); font-size: 13px; cursor: pointer; }
+.check input { width: auto; margin: 0; }
+.fold { cursor: pointer; user-select: none; }
+.caret { color: var(--sub); font-size: 12px; }
+.subj.closed .bar { margin-bottom: 0; }
+.more-done { text-align: center; padding: 2px 0; }
