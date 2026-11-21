@@ -24,10 +24,6 @@ textarea { resize: none; min-height: 44px; }
 #quick-form { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 12px; }
 #quick-form button { background: var(--accent); border-color: var(--accent); white-space: nowrap; }
 
-.stats { display: flex; gap: 8px; margin-bottom: 12px; }
-.stats div { flex: 1; background: var(--card); border-radius: 10px; padding: 8px 10px; }
-.stats b { display: block; font-size: 20px; }
-.stats span { color: var(--sub); font-size: 12px; }
 
 .list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
@@ -78,7 +74,8 @@ nav button { border: 0; border-radius: 0; background: none; padding: 14px 0; col
 nav button.active { color: var(--text); font-weight: 700; }
 
 .toast { position: fixed; left: 50%; bottom: calc(80px + var(--safe-b)); transform: translateX(-50%);
-  background: #333; padding: 8px 14px; border-radius: 99px; font-size: 13px; z-index: 9; }
+  background: #333; padding: 8px 14px; border-radius: 99px; font-size: 13px; z-index: 9;
+  width: max-content; max-width: calc(100vw - 32px); text-align: center; }
 .toast button { margin-left: 8px; padding: 2px 8px; font-size: 12px; }
 
 /* PC 앱(Electron): 헤더를 창 제목줄로 쓰고, 오른쪽 창 버튼 자리를 비움 */
@@ -129,7 +126,8 @@ button:disabled { opacity: .5; }
 
 /* 고치기 창 */
 dialog { background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 14px;
-  padding: 16px; width: min(92vw, 420px); }
+  padding: 0; width: min(92vw, 420px); }
+dialog form { padding: 16px; } /* 안쪽 여백을 눌러도 창이 닫히지 않게 (바깥 = dialog 자신) */
 dialog::backdrop { background: rgba(0, 0, 0, .55); }
 dialog h3 { margin: 0 0 12px; }
 dialog label { display: block; margin-bottom: 10px; color: var(--sub); font-size: 13px; }
@@ -196,3 +194,28 @@ button.primary { background: var(--accent); border-color: var(--accent); }
 .done-row .side { display: flex; gap: 6px; align-items: center; flex: none; }
 .rl { font-size: 12px; font-weight: 600; }
 .rl.f { color: var(--forgot); } .rl.h { color: var(--hard); } .rl.g { color: var(--good); }
+
+/* 최종 정리: 오늘 화면 */
+.entry { margin-bottom: 4px; }
+.date-row .added { margin-left: auto; }
+.progress { border-top: 1px solid var(--line); padding-top: 12px; margin-bottom: 10px; }
+.progress-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; gap: 8px; }
+.progress-head > b { font-size: 16px; }
+#progress-text { font-size: 13px; color: var(--sub); }
+#progress-text b { color: var(--text); font-size: 15px; }
+.pbar { height: 6px; background: var(--line); border-radius: 99px; overflow: hidden; }
+.pbar i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 99px; transition: width .3s; }
+.progress.complete .pbar i { background: var(--good); }
+.progress.complete #progress-text { color: var(--good); font-weight: 600; }
+.kbd-hint { display: none; text-align: center; margin: 10px 0 0; }
+@media (hover: hover) and (pointer: fine) { .kbd-hint { display: block; } }
+
+/* 고치기 창 버튼 */
+button.wide { width: 100%; margin-top: 10px; }
+.text-danger { display: block; margin: 12px auto 0; background: none; border: 0; color: var(--forgot); font-size: 13px; padding: 6px 10px; }
+
+/* 설정 */
+#view-settings h3.first { margin-top: 0; }
+#view-settings h3 .hint { font-weight: 400; }
+.adv { margin-top: 28px; border-top: 1px solid var(--line); padding-top: 12px; }
+.adv summary { color: var(--sub); cursor: pointer; margin-bottom: 10px; }

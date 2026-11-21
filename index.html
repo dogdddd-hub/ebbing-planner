@@ -23,20 +23,27 @@
   <main>
     <!-- 오늘 -->
     <section id="view-today" class="view">
-      <div id="subject-chips" class="chips"></div>
-      <form id="quick-form">
-        <textarea id="quick-input" rows="1" placeholder="공부한 것 #과목  (여러 줄·3~7장 가능)"></textarea>
-        <button type="submit">추가</button>
-      </form>
-      <div id="date-row" class="date-row">
-        <span class="hint">공부한 날</span>
-        <button type="button" class="chip" data-back="0">오늘</button>
-        <button type="button" class="chip" data-back="1">어제</button>
-        <span class="chip pick" id="date-pick">날짜 선택<input type="date" id="quick-date" aria-label="공부한 날 선택"></span>
+      <div class="entry">
+        <div id="subject-chips" class="chips"></div>
+        <form id="quick-form">
+          <textarea id="quick-input" rows="1" placeholder="예) 행정법 3~5장 #행정법"></textarea>
+          <button type="submit">추가</button>
+        </form>
+        <div id="date-row" class="date-row">
+          <span class="hint">공부한 날</span>
+          <button type="button" class="chip" data-back="0">오늘</button>
+          <button type="button" class="chip" data-back="1">어제</button>
+          <span class="chip pick" id="date-pick">날짜 선택<input type="date" id="quick-date" aria-label="공부한 날 선택"></span>
+          <span id="added-today" class="hint added"></span>
+        </div>
       </div>
-      <div id="stats" class="stats"></div>
+      <div id="progress" class="progress hidden">
+        <div class="progress-head"><b>오늘 복습</b><span id="progress-text"></span></div>
+        <div class="pbar"><i id="progress-bar"></i></div>
+      </div>
       <div id="today-filter" class="chips filter hidden"></div>
       <ul id="today-list" class="list"></ul>
+      <p id="kbd-hint" class="hint kbd-hint hidden">키보드 1·2·3 = 맨 위 카드 잊음·애매·기억남</p>
       <div id="overflow-box" class="overflow hidden">
         <p id="overflow-text"></p>
         <button id="spread-btn">다음 날들로 나누기</button>
@@ -58,7 +65,7 @@
       </div>
       <p id="cal-stats" class="cal-stats"></p>
       <div id="cal-grid" class="cal-grid"></div>
-      <p class="hint"><b class="lg-due">파란 숫자</b> 앞으로 잡힌 복습 (계속 ‘기억남’이라고 가정한 예상치) · <b class="lg-done">초록 숫자</b> 그날 끝낸 복습</p>
+      <p class="hint"><b class="lg-due">파란 숫자</b> 앞으로 잡힌 복습(예상) · <b class="lg-done">초록 숫자</b> 그날 끝낸 복습</p>
       <ul id="cal-day-list" class="list"></ul>
     </section>
 
@@ -76,25 +83,27 @@
 
     <!-- 설정 -->
     <section id="view-settings" class="view hidden">
-      <label>복습 간격 (일, 쉼표로 구분)
-        <input id="set-intervals" inputmode="numeric">
+      <h3 class="first">복습 규칙 <span class="hint">· 바꾸면 바로 저장돼요</span></h3>
+      <label>복습 간격 (일, 쉼표나 띄어쓰기로 구분)
+        <input id="set-intervals" autocomplete="off">
       </label>
       <label>하루 시작 시각 (이 시각 전은 전날로 침)
-        <input id="set-daystart" type="number" min="0" max="12">
+        <input id="set-daystart" type="number" min="0" max="12" inputmode="numeric">
       </label>
       <label>하루 복습 상한
-        <input id="set-limit" type="number" min="1" max="500">
+        <input id="set-limit" type="number" min="1" max="500" inputmode="numeric">
       </label>
       <label>시험일 (이후 복습은 전날로 당김)
         <input id="set-exam" type="date">
       </label>
+
+      <h3>알림</h3>
       <label>아침 알림 (오늘 복습 수, 비우면 끔)
         <input id="set-morning" type="time">
       </label>
       <label>밤 알림 (아직 남은 복습이 있을 때, 비우면 끔)
         <input id="set-evening" type="time">
       </label>
-      <button id="save-settings">설정 저장</button>
       <div id="push-box"></div>
 
       <h3>동기화</h3>
@@ -107,11 +116,13 @@
         <label class="file-btn">가져오기<input id="import-file" type="file" accept="application/json" hidden></label>
       </div>
 
-      <h3>개발용</h3>
-      <label>날짜 이동 (일) — 테스트용 시간여행
-        <input id="set-offset" type="number">
-      </label>
-      <button id="reset-btn" class="danger">전체 초기화</button>
+      <details id="adv" class="adv">
+        <summary>고급</summary>
+        <label>날짜 이동 (일) — 테스트용 시간여행. 평소엔 0으로 두세요
+          <input id="set-offset" type="number" inputmode="numeric">
+        </label>
+        <button id="reset-btn" class="danger">이 기기 데이터 전체 초기화</button>
+      </details>
     </section>
   </main>
 
@@ -125,14 +136,12 @@
       <label>메모<textarea id="ed-note" rows="2" maxlength="1000" placeholder="쪽수, 헷갈린 부분 등"></textarea></label>
       <p id="ed-info" class="hint"></p>
       <div id="ed-rate" class="ed-rate"></div>
-      <div class="dlg-row">
-        <button type="button" id="ed-postpone">내일로 미루기</button>
-        <button type="button" id="ed-delete" class="danger">삭제</button>
-      </div>
+      <button type="button" id="ed-postpone" class="wide">내일로 미루기</button>
       <div class="dlg-row">
         <button type="button" id="ed-cancel">취소</button>
         <button type="submit" class="primary">저장</button>
       </div>
+      <button type="button" id="ed-delete" class="text-danger">이 항목 삭제</button>
     </form>
   </dialog>
 

@@ -190,10 +190,9 @@ function reportToday(states, t, s) {
   setBadge(all.length);
 }
 // 홈 화면 앱 아이콘의 숫자 (아이폰은 알림을 허용한 홈 화면 앱에서만 보임)
-let lastBadge = null;
+// 알림이 올 때 서비스 워커도 숫자를 바꾸므로, 기억해 두지 않고 매번 맞춤
 function setBadge(n) {
-  if (!('setAppBadge' in navigator) || n === lastBadge) return;
-  lastBadge = n;
+  if (!('setAppBadge' in navigator)) return;
   (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {});
 }
 
@@ -230,7 +229,7 @@ function renderChips() {
   $('#subject-chips').innerHTML = list.map((x) =>
     `<button type="button" class="chip${ui.subject === x.name ? ' on' : ''}" data-name="${esc(x.name)}" style="--c:${x.color}">${esc(x.name)}</button>`).join('') +
     `<button type="button" class="chip add" data-add="1">＋ 과목</button>`;
-  $('#quick-input').placeholder = ui.subject ? `${ui.subject}에서 공부한 것 (여러 줄·3~7장 가능)` : '공부한 것 #과목  (여러 줄·3~7장 가능)';
+  $('#quick-input').placeholder = ui.subject ? `${ui.subject}에서 공부한 것 (예: 3~5장)` : '예) 행정법 3~5장 #행정법';
 }
 
 function renderDateRow(t) {
@@ -251,10 +250,14 @@ function renderToday(states, t, s) {
   const q = todayQueue(db.items, states, t, s);
   const doneToday = db.logs.filter((l) => l.kind === 'review' && !l.deleted && l.on === t).length;
   const addedToday = db.items.filter((i) => i.status === 'active' && i.studiedOn === t).length;
-  $('#stats').innerHTML = `
-    <div><b>${q.now.length + q.overflow.length}</b><span>남은 복습</span></div>
-    <div><b>${doneToday}</b><span>오늘 완료</span></div>
-    <div><b>${addedToday}</b><span>오늘 추가</span></div>`;
+  $('#added-today').textContent = addedToday ? `오늘 공부 ${addedToday}개` : '';
+  // 오늘 복습 진행: 끝낸 것 / (끝낸 것 + 남은 것)
+  const remaining = q.now.length + q.overflow.length;
+  const total = doneToday + remaining;
+  $('#progress').classList.toggle('hidden', total === 0);
+  $('#progress').classList.toggle('complete', total > 0 && remaining === 0);
+  $('#progress-text').innerHTML = remaining ? `<b>${doneToday}</b> / ${total} 끝냄 · 남은 ${remaining}개` : '다 끝냄 ✓';
+  $('#progress-bar').style.width = `${total ? Math.round((doneToday / total) * 100) : 0}%`;
   // 과목별로 골라 보기 (과목이 2개 이상일 때만). 고르면 상한 넘은 것까지 그 과목은 전부 보여 줌
   const all = [...q.now, ...q.overflow];
   const counts = new Map();
@@ -267,9 +270,11 @@ function renderToday(states, t, s) {
     [...counts].map(([name, n]) => `<button type="button" class="chip${ui.filter === name ? ' on' : ''}" data-f="${esc(name)}" style="--c:${colorOf(name)}">${esc(name)} ${n}</button>`).join('');
   const shown = ui.filter ? all.filter((x) => x.item.subject === ui.filter) : q.now;
   $('#today-list').innerHTML = shown.map((x) => cardHTML(x.item, x.state, t, true)).join('');
+  $('#kbd-hint').classList.toggle('hidden', !shown.length);
   $('#empty-today').classList.toggle('hidden', shown.length > 0);
+  const streak = streakDays(t);
   $('#empty-today').textContent = !db.items.some((i) => i.status === 'active') ? '위 입력창에 오늘 공부한 것을 적어 보세요. 복습일은 알아서 잡아 드려요.'
-    : doneToday ? `오늘 복습을 다 끝냈어요. 수고했어요! (${doneToday}개${streakDays(t) >= 2 ? ` · 연속 ${streakDays(t)}일째` : ''})` : '오늘 복습할 항목이 없습니다.';
+    : doneToday ? `오늘 복습을 다 끝냈어요. 수고했어요!${streak >= 2 ? ` 연속 ${streak}일째예요.` : ''}` : '오늘 복습할 항목이 없습니다.';
   renderWeek(states, t, s);
   renderDone(t);
   $('#overflow-box').classList.toggle('hidden', q.overflow.length === 0 || !!ui.filter);
@@ -302,7 +307,7 @@ function renderWeek(states, t, s) {
   box.classList.toggle('hidden', !any && !dday);
   if (!any && !dday) { box.innerHTML = ''; return; }
   const max = Math.max(1, ...counts);
-  box.innerHTML = `<div class="week-head"><span class="hint">앞으로 7일 · 누르면 달력</span>${dday}</div><div class="week">` +
+  box.innerHTML = `<div class="week-head"><span class="hint">앞으로 7일</span>${dday}</div><div class="week">` +
     counts.map((n, i) => {
       const d = addDays(t, i + 1);
       return `<button type="button" class="wd${n > s.dailyLimit ? ' over' : ''}" data-d="${d}" title="${fmt(d)} 복습 ${n}개">
@@ -344,14 +349,16 @@ function renderCalendar(states, t, s) {
       byDate.get(dd).push({ it, st, first: i === 0 });
     });
   }
-  // 지난 날: 그날 끝낸 복습
+  // 지난 날: 그날 끝낸 복습 (지운 항목 것은 빼고)
+  const byId = new Map(db.items.map((i) => [i.id, i]));
+  const counted = (l) => l.kind === 'review' && !l.deleted && byId.has(l.itemId) && byId.get(l.itemId).status !== 'deleted';
   const doneBy = new Map();
   for (const l of db.logs) {
-    if (l.kind !== 'review' || l.deleted || l.on >= t) continue;
+    if (!counted(l) || l.on >= t) continue;
     if (!doneBy.has(l.on)) doneBy.set(l.on, []);
     doneBy.get(l.on).push(l);
   }
-  const monthDone = db.logs.filter((l) => l.kind === 'review' && !l.deleted && l.on.startsWith(calMonth)).length;
+  const monthDone = db.logs.filter((l) => counted(l) && l.on.startsWith(calMonth)).length;
   const streak = streakDays(t);
   $('#cal-stats').innerHTML = `${streak ? `<b>연속 ${streak}일째</b> 공부 중 · ` : ''}${m}월에 복습 <b>${monthDone}</b>개`;
   const first = `${calMonth}-01`;
@@ -367,8 +374,7 @@ function renderCalendar(states, t, s) {
   $('#cal-grid').innerHTML = cells;
   if (calSel && calSel < t) {
     // 지난 날: 그날 한 복습과 새로 공부한 것
-    const byId = new Map(db.items.map((i) => [i.id, i]));
-    const logs = (doneBy.get(calSel) || []).filter((l) => byId.get(l.itemId)?.status !== 'deleted');
+    const logs = doneBy.get(calSel) || [];
     const added = db.items.filter((i) => i.status !== 'deleted' && i.studiedOn === calSel).length;
     $('#cal-day-list').innerHTML = `<li class="hint">${fmt(calSel)} (${dow(calSel)}) — 복습 ${logs.length}개 끝냄${added ? ` · 새로 공부 ${added}개` : ''}</li>` +
       logs.map((l) => {
@@ -380,7 +386,7 @@ function renderCalendar(states, t, s) {
   }
   const list = calSel ? byDate.get(calSel) || [] : [];
   $('#cal-day-list').innerHTML = calSel
-    ? `<li class="hint">${fmt(calSel)} (${dow(calSel)}) — ${list.length}개${calSel === s.examDate ? ' · 시험일' : ''}</li>` +
+    ? `<li class="hint">${fmt(calSel)} (${dow(calSel)}) — ${calSel === t ? `남은 복습 ${list.length}개` : `복습 ${list.length}개 예정`}${calSel === s.examDate ? ' · 시험일' : ''}</li>` +
       list.map((x) => cardHTML(x.it, x.st, t, false)).join('')
     : '';
 }
@@ -403,6 +409,7 @@ function renderSubjects(states, t) {
   const match = (i) => (!q || i.title.toLowerCase().includes(q) || (i.note || '').toLowerCase().includes(q))
     && (!weak || isWeak(states.get(i.id)));
   const collapsed = new Set(ui.collapsed || []);
+  $('.subj-search').classList.toggle('hidden', !db.items.some((i) => i.status === 'active'));
   const form = `<form id="subj-form" class="subj-form">
       <input id="subj-name" placeholder="새 과목 이름 (예: 행정법)" maxlength="20">
       <button type="submit">추가</button></form>`;
@@ -431,7 +438,9 @@ function renderSubjects(states, t) {
   }).join('');
   const none = q ? `'${esc(subjQuery.trim())}'에 맞는 항목이 없어요.` : '자주 잊는 항목이 없어요. 잘하고 있어요!';
   const weakHint = weak && found ? '<p class="hint">잊음 2번 이상, 또는 잊음·애매 합쳐 3번 이상인 항목 · 많이 틀린 순</p>' : '';
-  $('#subject-list').innerHTML = form + (filtering && !found ? `<p class="empty">${none}</p>` : weakHint + html);
+  $('#subject-list').innerHTML = filtering
+    ? (found ? weakHint + html : `<p class="empty">${none}</p>`)
+    : html + form;
 }
 
 function addSubject(name) {
@@ -469,13 +478,15 @@ function removeSubject(name) {
 function renderSettings(s) {
   renderSync();
   renderPush();
-  $('#set-intervals').value = s.intervals.join(', ');
-  $('#set-daystart').value = s.dayStartHour;
-  $('#set-limit').value = s.dailyLimit;
-  $('#set-exam').value = s.examDate || '';
-  $('#set-morning').value = s.notify?.morning || '';
-  $('#set-evening').value = s.notify?.evening || '';
-  $('#set-offset').value = db.dayOffset || 0;
+  const setVal = (sel, v) => { const el = $(sel); if (el !== document.activeElement) el.value = v; };
+  setVal('#set-intervals', s.intervals.join(', '));
+  setVal('#set-daystart', s.dayStartHour);
+  setVal('#set-limit', s.dailyLimit);
+  setVal('#set-exam', s.examDate || '');
+  setVal('#set-morning', s.notify?.morning || '');
+  setVal('#set-evening', s.notify?.evening || '');
+  setVal('#set-offset', db.dayOffset || 0);
+  if (db.dayOffset) $('#adv').open = true;
 }
 
 // ---------- 이벤트 ----------
@@ -657,23 +668,33 @@ const shiftMonth = (k) => {
 $('#cal-prev').onclick = () => shiftMonth(-1);
 $('#cal-next').onclick = () => shiftMonth(1);
 
-$('#save-settings').onclick = () => {
-  const intervals = $('#set-intervals').value.split(/[,\s]+/).map(Number).filter((n) => Number.isInteger(n) && n > 0);
-  if (!intervals.length) return toast('간격을 1 이상의 정수로 입력하세요');
+// 설정은 칸을 바꾸면 바로 저장 (비운 칸은 원래 값 유지)
+function saveSettings() {
+  const s = S();
+  // 숫자만 골라냄: "1, 3, 7" "1 3 7" "1.3.7" 모두 됨
+  const intervals = $('#set-intervals').value.split(/\D+/).filter(Boolean).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+  if (!intervals.length) { toast('간격을 1 이상의 숫자로 입력하세요'); $('#set-intervals').value = s.intervals.join(', '); return; }
+  const num = (sel, def, lo, hi) => {
+    const v = $(sel).value;
+    const n = v === '' ? def : Math.round(Number(v));
+    return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : def;
+  };
   db.settings = {
     ...db.settings,
-    notify: { morning: $('#set-morning').value || '', evening: $('#set-evening').value || '' },
     intervals,
-    dayStartHour: Math.min(12, Math.max(0, Number($('#set-daystart').value) || 0)),
-    dailyLimit: Math.max(1, Number($('#set-limit').value) || 30),
+    dayStartHour: num('#set-daystart', s.dayStartHour, 0, 12),
+    dailyLimit: num('#set-limit', s.dailyLimit, 1, 500),
     examDate: $('#set-exam').value || null,
+    notify: { morning: $('#set-morning').value || '', evening: $('#set-evening').value || '' },
   };
   touch('settings', db.settings);
-  db.dayOffset = Number($('#set-offset').value) || 0;
+  db.dayOffset = num('#set-offset', 0, -3650, 3650);
   save();
   toast('저장됨');
   render();
-};
+}
+['#set-intervals', '#set-daystart', '#set-limit', '#set-exam', '#set-morning', '#set-evening', '#set-offset']
+  .forEach((sel) => $(sel).addEventListener('change', saveSettings));
 
 $('#export-btn').onclick = () => {
   const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
@@ -819,21 +840,20 @@ async function currentPushSub() {
 async function renderPush() {
   const box = $('#push-box');
   if (!box) return;
-  const head = '<h3>이 기기 알림</h3>';
-  if (window.desktop) { box.innerHTML = head + '<p class="hint">PC 앱은 위 시각에 Windows 알림을 띄웁니다.</p>'; return; }
-  if (!sync.configured() || !syncUser) { box.innerHTML = head + '<p class="hint">알림을 받으려면 먼저 아래 동기화에서 로그인하세요.</p>'; return; }
+  if (window.desktop) { box.innerHTML = '<p class="hint">PC 앱은 위 시각에 Windows 알림을 띄웁니다.</p>'; return; }
+  if (!sync.configured() || !syncUser) { box.innerHTML = '<p class="hint">알림을 받으려면 먼저 아래 동기화에서 로그인하세요.</p>'; return; }
   if (!pushSupported()) {
-    box.innerHTML = head + `<p class="hint">${isIOS && !standalone()
+    box.innerHTML = `<p class="hint">${isIOS && !standalone()
       ? '아이폰은 Safari 공유 버튼 → "홈 화면에 추가"로 설치한 앱에서만 알림을 받을 수 있습니다.'
       : '이 브라우저는 푸시 알림을 지원하지 않습니다.'}</p>`;
     return;
   }
   const sub = await currentPushSub();
   if (Notification.permission === 'denied') {
-    box.innerHTML = head + '<p class="hint">알림이 차단되어 있습니다. 기기 설정에서 이 앱의 알림을 허용하세요.</p>';
+    box.innerHTML = '<p class="hint">알림이 차단되어 있습니다. 기기 설정에서 이 앱의 알림을 허용하세요.</p>';
     return;
   }
-  box.innerHTML = head + (sub
+  box.innerHTML = (sub
     ? `<p class="hint">이 기기로 아침·밤 알림이 옵니다.</p>
        <div class="row"><button id="push-test">테스트 알림</button><button id="push-off">알림 끄기</button></div>`
     : `<p class="hint">켜면 휴대폰이 잠겨 있어도 정한 시각에 알림이 옵니다.</p>
