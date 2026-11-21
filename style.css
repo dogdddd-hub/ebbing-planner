@@ -182,3 +182,17 @@ button.primary { background: var(--accent); border-color: var(--accent); }
 .caret { color: var(--sub); font-size: 12px; }
 .subj.closed .bar { margin-bottom: 0; }
 .more-done { text-align: center; padding: 2px 0; }
+
+/* 과목 화면 체크 */
+.checks { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+#weak-count { color: var(--forgot); }
+
+/* 달력: 지난 기록 */
+.cal-stats { margin: -2px 0 10px; color: var(--sub); font-size: 13px; }
+.cal-stats b { color: var(--text); }
+.cal-grid .n.done { color: var(--good); }
+.lg-due { color: var(--accent); font-weight: 600; }
+.lg-done { color: var(--good); font-weight: 600; }
+.done-row .side { display: flex; gap: 6px; align-items: center; flex: none; }
+.rl { font-size: 12px; font-weight: 600; }
+.rl.f { color: var(--forgot); } .rl.h { color: var(--hard); } .rl.g { color: var(--good); }

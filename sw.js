@@ -1,5 +1,5 @@
 // 오프라인용 캐시. 파일을 고치면 VERSION을 올리세요.
-const VERSION = 'v6';
+const VERSION = 'v7';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'scheduler.js', 'merge.js', 'sync.js', 'config.js', 'manifest.json',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
@@ -28,13 +28,18 @@ self.addEventListener('fetch', (e) => {
 self.addEventListener('push', (e) => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch { d = { body: e.data?.text() }; }
-  e.waitUntil(self.registration.showNotification(d.title || '복습 플래너', {
+  // 앱 아이콘 숫자도 함께 (지원하는 기기만)
+  const nav = self.navigator;
+  const badge = typeof d.count === 'number' && nav.setAppBadge
+    ? (d.count > 0 ? nav.setAppBadge(d.count) : nav.clearAppBadge()).catch(() => {})
+    : Promise.resolve();
+  e.waitUntil(Promise.all([badge, self.registration.showNotification(d.title || '복습 플래너', {
     body: d.body || '복습할 시간이에요.',
     icon: 'icons/icon-192.png',
     badge: 'icons/icon-192.png',
     tag: d.tag || 'review',
     data: { url: d.url || './' },
-  }));
+  })]));
 });
 // 알림을 누르면 앱 열기 (이미 열려 있으면 그 창으로)
 self.addEventListener('notificationclick', (e) => {

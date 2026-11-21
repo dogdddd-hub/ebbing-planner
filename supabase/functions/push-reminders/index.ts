@@ -4,7 +4,7 @@
 // scheduler.js는 배포 때 상위 폴더에서 복사해 옴 (desktop처럼 같은 계산 코드를 씀)
 import webpush from 'npm:web-push@3.6.7';
 import { createClient } from 'npm:@supabase/supabase-js@2.117.3';
-import { DEFAULT_SETTINGS, computeAll, todayQueue, addDays } from './scheduler.js';
+import { DEFAULT_SETTINGS, computeAll, todayQueue, addDays, subjectSummary } from './scheduler.js';
 
 const SB_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -57,7 +57,8 @@ async function dueCount(userId: string, settings: any, day: string) {
   const items = rows.filter((r) => r.kind === 'item').map((r) => r.data);
   const logs = rows.filter((r) => r.kind === 'log').map((r) => r.data);
   const q = todayQueue(items, computeAll(items, logs, settings), day, settings);
-  return q.now.length + q.overflow.length;
+  const all = [...q.now, ...q.overflow];
+  return { n: all.length, detail: subjectSummary(all) };
 }
 
 async function sendTo(subs: any[], payload: object) {
@@ -97,10 +98,11 @@ async function runScheduled() {
       // 먼저 기록 → 같은 시각에 두 번 실행돼도 한 번만 보냄
       const { error: insErr } = await db.from('push_sent').insert({ user_id: userId, day: c.day, slot: slot.key });
       if (insErr) continue; // 이미 보냄 (기본 키 충돌)
-      const n = await dueCount(userId, settings, c.day);
+      const { n, detail } = await dueCount(userId, settings, c.day);
       if (n <= 0) { report.push({ userId, slot: slot.key, skipped: 'none due' }); continue; }
-      const body = slot.key === 'm' ? `오늘 복습할 항목이 ${n}개 있어요.` : `아직 남은 복습이 ${n}개 있어요.`;
-      const sent = await sendTo(list, { title: '복습 플래너', body, url: APP_URL, tag: `review-${slot.key}` });
+      const head = slot.key === 'm' ? `오늘 복습할 항목이 ${n}개 있어요.` : `아직 남은 복습이 ${n}개 있어요.`;
+      const body = detail ? `${head}\n${detail}` : head;
+      const sent = await sendTo(list, { title: '복습 플래너', body, url: APP_URL, tag: `review-${slot.key}`, count: n });
       report.push({ userId, slot: slot.key, due: n, sent });
     }
   }
@@ -118,8 +120,8 @@ async function runTest(token: string) {
   if (!subs?.length) return Response.json({ sent: 0, devices: 0 });
   const settings = await settingsOf(userId);
   const c = clock(subs[0].tz || 'Asia/Seoul', Number(settings.dayStartHour) || 0);
-  const n = await dueCount(userId, settings, c.day);
-  const sent = await sendTo(subs, { title: '복습 플래너 (테스트)', body: `알림이 잘 와요. 지금 남은 복습 ${n}개`, url: APP_URL, tag: 'review-test' });
+  const { n, detail } = await dueCount(userId, settings, c.day);
+  const sent = await sendTo(subs, { title: '복습 플래너 (테스트)', body: `알림이 잘 와요. 지금 남은 복습 ${n}개${detail ? `\n${detail}` : ''}`, url: APP_URL, tag: 'review-test', count: n });
   return Response.json({ sent, devices: subs.length });
 }
 

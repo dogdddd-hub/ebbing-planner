@@ -40,7 +40,7 @@ export const RATING = { FORGOT: 1, HARD: 2, GOOD: 3 };
 // logs: 해당 항목의 로그(시간순). 종류:
 //   { kind:'review', on, rating }   복습 완료
 //   { kind:'postpone', on, to }     예정일만 옮김(단계 유지)
-// 반환: { step, due, mastered, reviews, lapses }
+// 반환: { step, due, mastered, reviews, lapses, hards }
 export function computeState(item, logs, settings = DEFAULT_SETTINGS) {
   const I = settings.intervals;
   let step = 0;
@@ -48,6 +48,7 @@ export function computeState(item, logs, settings = DEFAULT_SETTINGS) {
   let mastered = false;
   let reviews = 0;
   let lapses = 0;
+  let hards = 0;
 
   for (const log of logs) {
     if (log.kind === 'postpone') {
@@ -63,6 +64,7 @@ export function computeState(item, logs, settings = DEFAULT_SETTINGS) {
       mastered = false;
       due = addDays(log.on, I[0]);
     } else if (log.rating === RATING.HARD) {
+      hards++;
       // 같은 단계 간격을 한 번 더
       due = addDays(log.on, I[Math.min(step, I.length - 1)]);
     } else {
@@ -82,7 +84,20 @@ export function computeState(item, logs, settings = DEFAULT_SETTINGS) {
     if (diffDays(eve, item.studiedOn) > 0) due = eve;
   }
 
-  return { step, due, mastered, reviews, lapses };
+  return { step, due, mastered, reviews, lapses, hards };
+}
+
+// 자주 잊는 항목: 잊음 2번 이상, 또는 잊음+애매 합쳐 3번 이상
+export const isWeak = (st) => !!st && (st.lapses >= 2 || st.lapses + st.hards >= 3);
+export const weakScore = (st) => (st ? st.lapses * 2 + st.hards : 0);
+
+// 알림용 과목별 개수: [{item}] → "행정법 3, 국어 2 외 1과목"
+export function subjectSummary(entries, max = 3) {
+  const c = new Map();
+  for (const e of entries) c.set(e.item.subject, (c.get(e.item.subject) || 0) + 1);
+  const arr = [...c].sort((a, b) => b[1] - a[1]);
+  const head = arr.slice(0, max).map(([n, k]) => `${n} ${k}`).join(', ');
+  return arr.length > max ? `${head} 외 ${arr.length - max}과목` : head;
 }
 
 // 모든 항목의 상태 계산
@@ -155,15 +170,37 @@ export function projectDates(item, state, settings) {
 
 // ---------- 빠른 입력 파싱 ----------
 // "행정법 3장 행정행위 #행정법" → { title, subject }
+// 범위는 '~'로: "행정법 3~7장" → 3장·4장·…·7장, "영어 Day 1~5" → Day 1·…·Day 5 (최대 30개)
+// '-'는 나누지 않음 (2-1처럼 절 번호로 많이 쓰여서)
+const UNITS = '회차|일차|주차|차시|단원|챕터|장|강|회|과|편|절';
+const RANGE_UNIT = new RegExp(`(\\d+)\\s*(?:${UNITS})?\\s*[~～]\\s*(\\d+)\\s*(${UNITS})`);
+const RANGE_PREFIX = /\b(day|ch|chapter|unit|lesson|part|set|test)(\s*)(\d+)\s*[~～]\s*(\d+)/i;
+const MAX_RANGE = 30;
+
+export function expandRange(title) {
+  const num = (a, n) => (a.length > 1 && a[0] === '0' ? String(n).padStart(a.length, '0') : String(n));
+  const build = (whole, a, b, piece) => {
+    const s = Number(a), e = Number(b);
+    if (!(e > s && e - s < MAX_RANGE)) return null;
+    return Array.from({ length: e - s + 1 }, (_, k) => title.replace(whole, piece(num(a, s + k))));
+  };
+  let m = title.match(RANGE_UNIT);
+  let out = m && build(m[0], m[1], m[2], (n) => `${n}${m[3]}`);
+  if (out) return out;
+  m = title.match(RANGE_PREFIX);
+  out = m && build(m[0], m[3], m[4], (n) => `${m[1]}${m[2]}${n}`);
+  return out || [title];
+}
+
 export function parseQuickInput(text, fallbackSubject = '기타') {
   return text
     .split('\n')
     .map((l) => l.trim())
     .filter(Boolean)
-    .map((line) => {
+    .flatMap((line) => {
       const m = line.match(/#(\S+)/);
       const subject = m ? m[1] : fallbackSubject;
       const title = line.replace(/#\S+/g, '').replace(/\s+/g, ' ').trim();
-      return { title: title || line, subject };
+      return expandRange(title || line).map((t) => ({ title: t, subject }));
     });
 }

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DEFAULT_SETTINGS as S, computeState, addDays, diffDays, localDate,
-  todayQueue, spreadOverflow, computeAll, parseQuickInput, projectDates,
+  todayQueue, spreadOverflow, computeAll, parseQuickInput, projectDates, isWeak, subjectSummary,
 } from '../scheduler.js';
 
 const item = { id: 'a', studiedOn: '2026-11-01', status: 'active', createdAt: 1 };
@@ -115,4 +115,34 @@ test('지난 날짜로 넣은 항목 → 첫 복습이 이미 지났으면 오�
   logs.push({ kind: 'review', itemId: 'p', on: t, rating: 3, at: 2 });
   st = computeAll([old], logs, S).get('p');
   assert.deepEqual([st.due, st.step], [addDays(t, S.intervals[1]), 1]);
+});
+
+test('범위 입력: ~로 나누고, -·쪽수·너무 큰 범위는 그대로', () => {
+  const titles = (s) => parseQuickInput(s).map((x) => x.title);
+  assert.deepEqual(titles('행정법 3~5장 #행정법'), ['행정법 3장', '행정법 4장', '행정법 5장']);
+  assert.deepEqual(parseQuickInput('행정법 3~4장 #행정법').map((x) => x.subject), ['행정법', '행정법']);
+  assert.deepEqual(titles('영어 Day 1~3'), ['영어 Day 1', '영어 Day 2', '영어 Day 3']);
+  assert.deepEqual(titles('국어 01~02강'), ['국어 01강', '국어 02강']);
+  assert.deepEqual(titles('행정법 3장~4장 행정행위'), ['행정법 3장 행정행위', '행정법 4장 행정행위']);
+  assert.deepEqual(titles('행정법 2-1 행정행위'), ['행정법 2-1 행정행위']);
+  assert.deepEqual(titles('p.30~45'), ['p.30~45']);
+  assert.deepEqual(titles('범위 1~100장'), ['범위 1~100장']);
+  assert.deepEqual(titles('회계 5~3장'), ['회계 5~3장']);
+});
+
+test('자주 잊는 항목 판정과 애매 횟수', () => {
+  const st = (rs) => computeState(item, rs.map((r, k) => rv(addDays('2026-11-02', k), r)), S);
+  assert.equal(st([2, 2]).hards, 2);
+  assert.equal(isWeak(st([3, 2, 2])), false);   // 애매 2
+  assert.equal(isWeak(st([2, 2, 2])), true);    // 애매 3
+  assert.equal(isWeak(st([1, 3, 1])), true);    // 잊음 2
+  assert.equal(isWeak(st([1, 2, 3])), false);   // 잊음1+애매1
+  assert.equal(isWeak(st([1, 2, 2])), true);    // 잊음1+애매2
+});
+
+test('알림용 과목별 개수', () => {
+  const e = (s) => ({ item: { subject: s } });
+  assert.equal(subjectSummary([e('국어'), e('행정법'), e('행정법')]), '행정법 2, 국어 1');
+  assert.equal(subjectSummary([e('a'), e('b'), e('c'), e('d'), e('a')]), 'a 2, b 1, c 1 외 1과목');
+  assert.equal(subjectSummary([]), '');
 });

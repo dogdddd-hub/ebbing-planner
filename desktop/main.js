@@ -45,7 +45,7 @@ function serve(req) {
 
 // ---------- 창 / 트레이 ----------
 let win = null, tray = null;
-let report = { date: null, due: 0, notify: { morning: '', evening: '' } };
+let report = { date: null, due: 0, detail: '', notify: { morning: '', evening: '' } };
 
 function createWindow() {
   win = new BrowserWindow({
@@ -128,9 +128,10 @@ function checkSlots() {
   if (!report.date) return;
   const hm = nowHM();
   const m = validHM(report.notify.morning), e = validHM(report.notify.evening);
+  const tail = report.detail ? `\n${report.detail}` : '';
   const slots = [
-    m && hm >= m && !(e && hm >= e && e > m) && { key: 'm', body: `오늘 복습할 항목이 ${report.due}개 있어요.` },
-    e && hm >= e && { key: 'e', body: `아직 남은 복습이 ${report.due}개 있어요.` },
+    m && hm >= m && !(e && hm >= e && e > m) && { key: 'm', body: `오늘 복습할 항목이 ${report.due}개 있어요.${tail}` },
+    e && hm >= e && { key: 'e', body: `아직 남은 복습이 ${report.due}개 있어요.${tail}` },
   ].filter(Boolean);
   for (const slot of slots) {
     const key = `${report.date}:${slot.key}`;
@@ -144,7 +145,10 @@ function checkSlots() {
 
 ipcMain.on('planner:report', (e, r) => {
   if (!r || typeof r.date !== 'string') return;
-  report = { date: r.date, due: Number(r.due) || 0, notify: { morning: validHM(r.notify?.morning || ''), evening: validHM(r.notify?.evening || '') } };
+  report = {
+    date: r.date, due: Number(r.due) || 0, detail: typeof r.detail === 'string' ? r.detail.slice(0, 120) : '',
+    notify: { morning: validHM(r.notify?.morning || ''), evening: validHM(r.notify?.evening || '') },
+  };
   updateTray();
   checkSlots();
 });
