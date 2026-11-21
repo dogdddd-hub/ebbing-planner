@@ -2,7 +2,7 @@
 // 상위 폴더의 웹앱(index.html, app.js …)을 그대로 띄우고, PC 전용 기능만 여기서 더해요.
 //   - 창을 닫으면 트레이로 숨김, 트레이 아이콘에 오늘 남은 복습 수
 //   - PC 켤 때 자동 실행 (시작프로그램 폴더 바로가기)
-//   - 새 하루가 시작됐을 때 창이 숨겨져 있으면 "오늘 복습 N개" 알림
+//   - 아침·밤 정한 시각에 "오늘 복습 N개" / "남은 복습 N개" 알림 (시각은 앱 설정, 기기 간 동기화됨)
 const { app, BrowserWindow, Tray, Menu, Notification, nativeImage, protocol, shell, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -22,7 +22,7 @@ process.on('unhandledRejection', logError);
 
 // ---------- PC 앱 설정 (복습 데이터는 웹앱이 localStorage에 따로 저장) ----------
 const confPath = () => path.join(app.getPath('userData'), 'desktop.json');
-let conf = { autoStart: true, notified: null };
+let conf = { autoStart: true, sent: [] };
 function loadConf() { try { conf = { ...conf, ...JSON.parse(fs.readFileSync(confPath(), 'utf8')) }; } catch {} }
 function saveConf() { try { fs.writeFileSync(confPath(), JSON.stringify(conf, null, 2)); } catch (e) { logError(e); } }
 
@@ -45,7 +45,7 @@ function serve(req) {
 
 // ---------- 창 / 트레이 ----------
 let win = null, tray = null;
-let report = { date: null, due: 0 };
+let report = { date: null, due: 0, notify: { morning: '', evening: '' } };
 
 function createWindow() {
   win = new BrowserWindow({
@@ -112,19 +112,41 @@ function applyAutoStart() {
 }
 
 // ---------- 웹앱이 알려주는 오늘 상태 → 트레이·알림 ----------
+const pad = (n) => String(n).padStart(2, '0');
+const nowHM = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const validHM = (v) => /^\d{2}:\d{2}$/.test(v) ? v : '';
+
+function notify(body) {
+  if (!Notification.isSupported()) return;
+  const n = new Notification({ title: '복습 플래너', body, icon: ICON });
+  n.on('click', showMain);
+  n.show();
+}
+
+// 정한 시각이 지났고 오늘 아직 안 보냈으면 알림. 아침 알림은 밤 시각 전까지만.
+function checkSlots() {
+  if (!report.date) return;
+  const hm = nowHM();
+  const m = validHM(report.notify.morning), e = validHM(report.notify.evening);
+  const slots = [
+    m && hm >= m && !(e && hm >= e && e > m) && { key: 'm', body: `오늘 복습할 항목이 ${report.due}개 있어요.` },
+    e && hm >= e && { key: 'e', body: `아직 남은 복습이 ${report.due}개 있어요.` },
+  ].filter(Boolean);
+  for (const slot of slots) {
+    const key = `${report.date}:${slot.key}`;
+    if (conf.sent.includes(key)) continue;
+    conf.sent = [...conf.sent, key].slice(-20);
+    saveConf();
+    // 할 게 없거나, 지금 창을 보고 있으면 띄우지 않음
+    if (report.due > 0 && !(win.isVisible() && win.isFocused())) notify(slot.body);
+  }
+}
+
 ipcMain.on('planner:report', (e, r) => {
   if (!r || typeof r.date !== 'string') return;
-  report = { date: r.date, due: Number(r.due) || 0 };
+  report = { date: r.date, due: Number(r.due) || 0, notify: { morning: validHM(r.notify?.morning || ''), evening: validHM(r.notify?.evening || '') } };
   updateTray();
-  if (conf.notified === report.date) return;
-  conf.notified = report.date;
-  saveConf();
-  // 창을 보고 있을 때는 알림을 띄우지 않아요
-  if (report.due > 0 && !(win.isVisible() && win.isFocused()) && Notification.isSupported()) {
-    const n = new Notification({ title: '오늘 복습', body: `복습할 항목이 ${report.due}개 있어요.`, icon: ICON });
-    n.on('click', showMain);
-    n.show();
-  }
+  checkSlots();
 });
 
 // ---------- 시작 ----------

@@ -96,3 +96,24 @@ export async function syncNow(getDb, save) {
   }
   return { pulled, pushed: out.length };
 }
+
+// ---------- 폰 푸시 알림 ----------
+export async function savePush(sub) {
+  const c = await getClient();
+  const { error } = await c.from('push_subscriptions').upsert(sub, { onConflict: 'endpoint' });
+  if (error) throw new Error(msg(error));
+}
+
+export async function deletePush(endpoint) {
+  const c = await getClient();
+  const { error } = await c.from('push_subscriptions').delete().eq('endpoint', endpoint);
+  if (error) throw new Error(msg(error));
+}
+
+// 서버에서 이 계정의 기기들로 테스트 알림 한 번 보내기
+export async function testPush() {
+  const c = await getClient();
+  const { data, error } = await c.functions.invoke('push-reminders', { body: { test: true } });
+  if (error) throw new Error(msg(error));
+  return data;
+}

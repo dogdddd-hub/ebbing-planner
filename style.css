@@ -94,3 +94,17 @@ header #today-label { margin-left: auto; }
 html.desktop header #today-label { margin-left: 0; }
 #sync-box .row { margin-top: 4px; }
 button:disabled { opacity: .5; }
+
+/* 과목 버튼 */
+.chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chip { --c: var(--sub); flex: none; padding: 4px 11px; border-radius: 99px; font-size: 13px; background: transparent;
+  border: 1px solid color-mix(in srgb, var(--c) 55%, transparent); color: var(--c); }
+.chip.on { background: var(--c); border-color: var(--c); color: #fff; font-weight: 600; }
+.chip.add { --c: var(--sub); border-style: dashed; }
+.subj-form { display: flex; gap: 8px; margin-bottom: 16px; }
+.subj-form button { white-space: nowrap; }
+.subj h3 { flex-wrap: wrap; gap: 6px; }
+.subj-title { display: flex; align-items: center; gap: 8px; }
+.subj-tools { display: flex; align-items: center; gap: 6px; }
+.dot { width: 14px; height: 14px; padding: 0; border-radius: 50%; border: 0; }

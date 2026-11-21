@@ -6,6 +6,8 @@ export const DEFAULT_SETTINGS = {
   dayStartHour: 4,              // 새벽 4시 전은 전날로 침
   dailyLimit: 30,               // 하루 복습 상한
   examDate: null,               // 'YYYY-MM-DD' | null
+  subjects: [],                 // [{ name, color }] 등록한 과목
+  notify: { morning: '09:00', evening: '21:00' }, // 알림 시각 ('' = 끔)
 };
 
 // ---------- 날짜 유틸 (로컬 날짜 문자열 'YYYY-MM-DD' 기준) ----------

@@ -23,6 +23,7 @@
   <main>
     <!-- 오늘 -->
     <section id="view-today" class="view">
+      <div id="subject-chips" class="chips"></div>
       <form id="quick-form">
         <textarea id="quick-input" rows="1" placeholder="공부한 것 #과목  (여러 줄 가능)"></textarea>
         <button type="submit">추가</button>
@@ -67,7 +68,14 @@
       <label>시험일 (이후 복습은 전날로 당김)
         <input id="set-exam" type="date">
       </label>
+      <label>아침 알림 (오늘 복습 수, 비우면 끔)
+        <input id="set-morning" type="time">
+      </label>
+      <label>밤 알림 (아직 남은 복습이 있을 때, 비우면 끔)
+        <input id="set-evening" type="time">
+      </label>
       <button id="save-settings">설정 저장</button>
+      <div id="push-box"></div>
 
       <h3>동기화</h3>
       <div id="sync-box"></div>
