@@ -99,3 +99,20 @@ test('지워진 로그는 무시하고, 섞인 순서의 로그는 날짜순으�
   assert.equal(s.due, '2026-11-12');
   assert.equal(s.lapses, 0);
 });
+
+test('지난 날짜로 넣은 항목 → 첫 복습이 이미 지났으면 오늘 목록에, 한 항목 미루기는 단계 유지', () => {
+  const t = '2026-11-21';
+  const old = { id: 'p', studiedOn: '2026-11-19', status: 'active', createdAt: 1 }; // 첫 복습 11/20 (하루 밀림)
+  let st = computeAll([old], [], S).get('p');
+  assert.equal(st.due, '2026-11-20');
+  assert.equal(todayQueue([old], new Map([['p', st]]), t, S).now.length, 1);
+  // 내일로 미루기
+  const logs = [{ kind: 'postpone', itemId: 'p', on: t, to: '2026-11-22', at: 1 }];
+  st = computeAll([old], logs, S).get('p');
+  assert.deepEqual([st.due, st.step], ['2026-11-22', 0]);
+  assert.equal(todayQueue([old], new Map([['p', st]]), t, S).now.length, 0);
+  // 미룬 뒤 같은 날 바로 복습하면 복습 기준으로 다시 계산
+  logs.push({ kind: 'review', itemId: 'p', on: t, rating: 3, at: 2 });
+  st = computeAll([old], logs, S).get('p');
+  assert.deepEqual([st.due, st.step], [addDays(t, S.intervals[1]), 1]);
+});

@@ -1,5 +1,5 @@
 // 오프라인용 캐시. 파일을 고치면 VERSION을 올리세요.
-const VERSION = 'v4';
+const VERSION = 'v5';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'scheduler.js', 'merge.js', 'sync.js', 'config.js', 'manifest.json',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 

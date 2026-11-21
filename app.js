@@ -84,9 +84,18 @@ function undoLogs(ids) {
   save();
 }
 
+// 입력할 때 '공부한 날' (null = 오늘). 날이 바뀌면 다시 오늘로
+let addOn = null, addOnSetDay = null;
+const addDate = () => {
+  const t = today();
+  if (!addOn || addOnSetDay !== t || addOn >= t) { addOn = null; return t; }
+  return addOn;
+};
+function setAddOn(d) { addOn = d && d < today() ? d : null; addOnSetDay = today(); }
+
 function addItems(text) {
   const parsed = parseQuickInput(text, ui.subject || '기타');
-  const t = today();
+  const t = addDate();
   for (const p of parsed) {
     const it = { id: uid(), title: p.title, subject: p.subject, note: '', studiedOn: t, status: 'active', createdAt: Date.now() };
     touch('item', it);
@@ -103,6 +112,16 @@ function review(itemId, rating) {
   save();
   const label = { 1: '잊음', 2: '애매', 3: '기억남' }[rating];
   toast(`${label} 기록됨`, () => undoLogs(new Set([log.id])));
+}
+
+// 이 항목만 내일로 (단계는 그대로)
+function postponeItem(itemId) {
+  const t = today();
+  const log = { id: uid(), kind: 'postpone', itemId, on: t, to: addDays(t, 1), at: Date.now() };
+  touch('log', log);
+  db.logs.push(log);
+  save();
+  toast('내일로 미뤘어요', () => undoLogs(new Set([log.id])));
 }
 
 function removeItem(itemId) {
@@ -150,8 +169,9 @@ function cardHTML(it, st, t, withRate) {
   const info = st.mastered ? '완료'
     : `${st.step + 1}/${S().intervals.length}회차 · ${late > 0 ? `<span class="late">${late}일 밀림</span>` : st.due === t ? '오늘' : `다음 ${fmt(st.due)}`}`;
   return `<li class="card" data-id="${it.id}">
-    <div class="top"><div><div class="t">${esc(it.title)}</div><div class="meta">${info}${st.lapses ? ` · 잊음 ${st.lapses}회` : ''}</div></div>
-    ${tagHTML(it.subject)}</div>
+    <div class="top" data-edit="1"><div><div class="t">${esc(it.title)}</div><div class="meta">${info}${st.lapses ? ` · 잊음 ${st.lapses}회` : ''}</div>
+    ${it.note ? `<div class="note">${esc(it.note)}</div>` : ''}</div>
+    <div class="side">${tagHTML(it.subject)}<button class="more" data-edit="1" aria-label="고치기">⋯</button></div></div>
     ${withRate ? `<div class="rate">
       <button class="f" data-r="${RATING.FORGOT}">잊음</button>
       <button class="h" data-r="${RATING.HARD}">애매</button>
@@ -168,8 +188,21 @@ function renderChips() {
   $('#quick-input').placeholder = ui.subject ? `${ui.subject}에서 공부한 것 (여러 줄 가능)` : '공부한 것 #과목  (여러 줄 가능)';
 }
 
+function renderDateRow(t) {
+  const on = addDate();
+  const back = diffDays(t, on);
+  $('#date-row').querySelectorAll('[data-back]').forEach((b) => b.classList.toggle('on', Number(b.dataset.back) === back));
+  const pick = $('#date-pick');
+  pick.classList.toggle('on', back > 1);
+  pick.firstChild.textContent = back > 1 ? `${fmt(on)} (${dow(on)})` : '날짜 선택';
+  const inp = $('#quick-date');
+  inp.max = addDays(t, -1);
+  inp.value = back > 1 ? on : '';
+}
+
 function renderToday(states, t, s) {
   renderChips();
+  renderDateRow(t);
   const q = todayQueue(db.items, states, t, s);
   const doneToday = db.logs.filter((l) => l.kind === 'review' && !l.deleted && l.on === t).length;
   const addedToday = db.items.filter((i) => i.status === 'active' && i.studiedOn === t).length;
@@ -177,9 +210,20 @@ function renderToday(states, t, s) {
     <div><b>${q.now.length + q.overflow.length}</b><span>남은 복습</span></div>
     <div><b>${doneToday}</b><span>오늘 완료</span></div>
     <div><b>${addedToday}</b><span>오늘 추가</span></div>`;
-  $('#today-list').innerHTML = q.now.map((x) => cardHTML(x.item, x.state, t, true)).join('');
-  $('#empty-today').classList.toggle('hidden', q.now.length > 0);
-  $('#overflow-box').classList.toggle('hidden', q.overflow.length === 0);
+  // 과목별로 골라 보기 (과목이 2개 이상일 때만). 고르면 상한 넘은 것까지 그 과목은 전부 보여 줌
+  const all = [...q.now, ...q.overflow];
+  const counts = new Map();
+  for (const x of all) counts.set(x.item.subject, (counts.get(x.item.subject) || 0) + 1);
+  if (ui.filter && !counts.has(ui.filter)) ui.filter = null;
+  const filterBox = $('#today-filter');
+  filterBox.classList.toggle('hidden', counts.size < 2);
+  filterBox.innerHTML = counts.size < 2 ? '' :
+    `<button type="button" class="chip${ui.filter ? '' : ' on'}" data-f="">전체 ${all.length}</button>` +
+    [...counts].map(([name, n]) => `<button type="button" class="chip${ui.filter === name ? ' on' : ''}" data-f="${esc(name)}" style="--c:${colorOf(name)}">${esc(name)} ${n}</button>`).join('');
+  const shown = ui.filter ? all.filter((x) => x.item.subject === ui.filter) : q.now;
+  $('#today-list').innerHTML = shown.map((x) => cardHTML(x.item, x.state, t, true)).join('');
+  $('#empty-today').classList.toggle('hidden', shown.length > 0);
+  $('#overflow-box').classList.toggle('hidden', q.overflow.length === 0 || !!ui.filter);
   $('#overflow-text').textContent = `상한(${s.dailyLimit}개)을 넘은 복습 ${q.overflow.length}개가 더 있습니다.`;
   $('#spread-btn').onclick = () => {
     const logs = spreadOverflow(q.overflow, db.items, states, t, s).map((l) => ({ ...l, id: uid(), at: Date.now() }));
@@ -315,21 +359,88 @@ qi.addEventListener('keydown', (e) => {
 $('#quick-form').onsubmit = (e) => {
   e.preventDefault();
   if (!qi.value.trim()) return;
+  const on = addDate();
   const n = addItems(qi.value);
   qi.value = ''; qi.style.height = 'auto';
-  toast(`${n}개 추가 · 첫 복습 ${fmt(addDays(today(), S().intervals[0]))}`);
+  const first = addDays(on, S().intervals[0]);
+  toast(`${n}개 추가${on !== today() ? ` (${fmt(on)} 공부)` : ''} · 첫 복습 ${first <= today() ? '오늘' : fmt(first)}`);
   render();
 };
 
+// 카드의 제목이나 ⋯을 누르면 고치기
+const editTarget = (e) => e.target.closest('[data-edit]')?.closest('.card')?.dataset.id;
 $('#today-list').onclick = (e) => {
   const b = e.target.closest('button[data-r]');
+  if (b) { review(b.closest('.card').dataset.id, Number(b.dataset.r)); render(); return; }
+  const id = editTarget(e);
+  if (id) openEditor(id);
+};
+$('#cal-day-list').onclick = (e) => { const id = editTarget(e); if (id) openEditor(id); };
+$('#today-filter').onclick = (e) => {
+  const b = e.target.closest('button[data-f]');
   if (!b) return;
-  review(b.closest('.card').dataset.id, Number(b.dataset.r));
+  ui.filter = b.dataset.f || null;
+  saveUi();
   render();
 };
+$('#date-row').onclick = (e) => {
+  const b = e.target.closest('button[data-back]');
+  if (b) { setAddOn(addDays(today(), -Number(b.dataset.back))); render(); return; }
+  if (e.target.closest('#date-pick')) { try { $('#quick-date').showPicker(); } catch {} }
+};
+$('#quick-date').onchange = (e) => { setAddOn(e.target.value || null); render(); };
+
+// ---------- 항목 고치기 ----------
+let editId = null;
+const dlg = $('#edit-dlg');
+function openEditor(id) {
+  const it = db.items.find((i) => i.id === id && i.status === 'active');
+  if (!it) return;
+  editId = id;
+  const t = today();
+  const st = computeAll(db.items, db.logs, S()).get(id);
+  const names = subjects().map((x) => x.name);
+  if (!names.includes(it.subject)) names.push(it.subject);
+  $('#ed-title').value = it.title;
+  $('#ed-subject').innerHTML = names.map((n) => `<option${n === it.subject ? ' selected' : ''}>${esc(n)}</option>`).join('');
+  $('#ed-date').value = it.studiedOn;
+  $('#ed-date').max = t;
+  $('#ed-note').value = it.note || '';
+  $('#ed-info').textContent = `복습 ${st.reviews}회${st.lapses ? ` · 잊음 ${st.lapses}회` : ''} · ` +
+    (st.mastered ? '모든 회차 완료' : st.due === t ? '오늘 복습' : st.due < t ? `${fmt(st.due)} 복습 예정이었음 (${diffDays(t, st.due)}일 밀림)` : `다음 복습 ${fmt(st.due)} (${dow(st.due)})`);
+  $('#ed-postpone').classList.toggle('hidden', st.mastered || !st.due || st.due > t);
+  dlg.showModal();
+  document.activeElement?.blur(); // 폰에서 열자마자 키보드가 올라오지 않게
+}
+$('#edit-form').onsubmit = (e) => {
+  e.preventDefault();
+  const it = db.items.find((i) => i.id === editId);
+  if (!it) return dlg.close();
+  const title = $('#ed-title').value.trim().replace(/\s+/g, ' ');
+  const date = $('#ed-date').value;
+  if (!title) return toast('제목을 입력하세요');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > today()) return toast('공부한 날은 오늘이나 그 이전이어야 해요');
+  const next = { title, subject: $('#ed-subject').value, studiedOn: date, note: $('#ed-note').value.trim() };
+  if (Object.keys(next).some((k) => (it[k] || '') !== next[k])) {
+    Object.assign(it, next);
+    touch('item', it);
+    save();
+    toast('고쳤어요');
+  }
+  dlg.close();
+  render();
+};
+$('#ed-cancel').onclick = () => dlg.close();
+$('#ed-postpone').onclick = () => { postponeItem(editId); dlg.close(); render(); };
+$('#ed-delete').onclick = () => { removeItem(editId); dlg.close(); render(); };
+// 바깥(어두운 곳)을 누르면 닫기
+dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+
 $('#subject-list').onclick = (e) => {
   const b = e.target.closest('button.del');
   if (b) { removeItem(b.dataset.id); render(); return; }
+  const id = editTarget(e);
+  if (id) { openEditor(id); return; }
   const a = e.target.closest('button[data-act]');
   if (!a) return;
   const name = a.closest('.subj').dataset.name;

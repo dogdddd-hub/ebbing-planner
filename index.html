@@ -28,7 +28,14 @@
         <textarea id="quick-input" rows="1" placeholder="공부한 것 #과목  (여러 줄 가능)"></textarea>
         <button type="submit">추가</button>
       </form>
+      <div id="date-row" class="date-row">
+        <span class="hint">공부한 날</span>
+        <button type="button" class="chip" data-back="0">오늘</button>
+        <button type="button" class="chip" data-back="1">어제</button>
+        <span class="chip pick" id="date-pick">날짜 선택<input type="date" id="quick-date" aria-label="공부한 날 선택"></span>
+      </div>
       <div id="stats" class="stats"></div>
+      <div id="today-filter" class="chips filter hidden"></div>
       <ul id="today-list" class="list"></ul>
       <div id="overflow-box" class="overflow hidden">
         <p id="overflow-text"></p>
@@ -94,6 +101,26 @@
       <button id="reset-btn" class="danger">전체 초기화</button>
     </section>
   </main>
+
+  <!-- 항목 고치기 -->
+  <dialog id="edit-dlg">
+    <form id="edit-form">
+      <h3>항목 고치기</h3>
+      <label>제목<input id="ed-title" maxlength="200" required></label>
+      <label>과목<select id="ed-subject"></select></label>
+      <label>공부한 날<input type="date" id="ed-date" required></label>
+      <label>메모<textarea id="ed-note" rows="2" maxlength="1000" placeholder="쪽수, 헷갈린 부분 등"></textarea></label>
+      <p id="ed-info" class="hint"></p>
+      <div class="dlg-row">
+        <button type="button" id="ed-postpone">내일로 미루기</button>
+        <button type="button" id="ed-delete" class="danger">삭제</button>
+      </div>
+      <div class="dlg-row">
+        <button type="button" id="ed-cancel">취소</button>
+        <button type="submit" class="primary">저장</button>
+      </div>
+    </form>
+  </dialog>
 
   <nav>
     <button data-view="today" class="active">오늘</button>
