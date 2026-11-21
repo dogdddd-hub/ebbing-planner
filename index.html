@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#141414">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="복습">
+  <title>복습 플래너</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1 id="title">오늘</h1>
+    <span id="today-label"></span>
+  </header>
+
+  <main>
+    <!-- 오늘 -->
+    <section id="view-today" class="view">
+      <form id="quick-form">
+        <textarea id="quick-input" rows="1" placeholder="공부한 것 #과목  (여러 줄 가능)"></textarea>
+        <button type="submit">추가</button>
+      </form>
+      <div id="stats" class="stats"></div>
+      <ul id="today-list" class="list"></ul>
+      <div id="overflow-box" class="overflow hidden">
+        <p id="overflow-text"></p>
+        <button id="spread-btn">다음 날들로 나누기</button>
+      </div>
+      <p id="empty-today" class="empty hidden">오늘 복습할 항목이 없습니다.</p>
+    </section>
+
+    <!-- 달력 -->
+    <section id="view-calendar" class="view hidden">
+      <div class="cal-head">
+        <button id="cal-prev" aria-label="이전 달">‹</button>
+        <strong id="cal-title"></strong>
+        <button id="cal-next" aria-label="다음 달">›</button>
+      </div>
+      <div id="cal-grid" class="cal-grid"></div>
+      <p class="hint">숫자 = 예정 복습 수 (앞으로 계속 ‘기억남’이라고 가정한 예상치)</p>
+      <ul id="cal-day-list" class="list"></ul>
+    </section>
+
+    <!-- 과목 -->
+    <section id="view-subjects" class="view hidden">
+      <div id="subject-list"></div>
+    </section>
+
+    <!-- 설정 -->
+    <section id="view-settings" class="view hidden">
+      <label>복습 간격 (일, 쉼표로 구분)
+        <input id="set-intervals" inputmode="numeric">
+      </label>
+      <label>하루 시작 시각 (이 시각 전은 전날로 침)
+        <input id="set-daystart" type="number" min="0" max="12">
+      </label>
+      <label>하루 복습 상한
+        <input id="set-limit" type="number" min="1" max="500">
+      </label>
+      <label>시험일 (이후 복습은 전날로 당김)
+        <input id="set-exam" type="date">
+      </label>
+      <button id="save-settings">설정 저장</button>
+
+      <h3>백업</h3>
+      <p class="hint">데이터는 이 기기에만 저장됩니다. 주기적으로 내보내기 해두세요.</p>
+      <div class="row">
+        <button id="export-btn">내보내기 (JSON)</button>
+        <label class="file-btn">가져오기<input id="import-file" type="file" accept="application/json" hidden></label>
+      </div>
+
+      <h3>개발용</h3>
+      <label>날짜 이동 (일) — 테스트용 시간여행
+        <input id="set-offset" type="number">
+      </label>
+      <button id="reset-btn" class="danger">전체 초기화</button>
+    </section>
+  </main>
+
+  <nav>
+    <button data-view="today" class="active">오늘</button>
+    <button data-view="calendar">달력</button>
+    <button data-view="subjects">과목</button>
+    <button data-view="settings">설정</button>
+  </nav>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
