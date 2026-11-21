@@ -1,0 +1,14 @@
+{
+  "name": "ebbing-planner-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "복습 플래너 — PC 데스크톱 앱 (상위 폴더의 웹앱을 그대로 띄움)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "shortcut": "electron make-shortcut.js"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0"
+  }
+}

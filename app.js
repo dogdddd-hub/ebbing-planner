@@ -75,10 +75,17 @@ let view = 'today';
 let calMonth = null; // 'YYYY-MM'
 let calSel = null;
 
+let renderedDay = null;
 function render() {
   const s = S();
   const t = today();
+  renderedDay = t;
   const states = computeAll(db.items, db.logs, s);
+  // PC 앱(Electron)이면 트레이·알림용으로 오늘 남은 복습 수를 알려 줌
+  if (window.desktop) {
+    const q = todayQueue(db.items, states, t, s);
+    window.desktop.report({ date: t, due: q.now.length + q.overflow.length });
+  }
   $('#today-label').textContent = `${fmt(t)} (${dow(t)})${db.dayOffset ? ` · 시간이동 ${db.dayOffset > 0 ? '+' : ''}${db.dayOffset}일` : ''}`;
   if (view === 'today') renderToday(states, t, s);
   if (view === 'calendar') renderCalendar(states, t, s);
@@ -273,7 +280,13 @@ $('#reset-btn').onclick = () => {
 // 날짜가 바뀌면(자정/하루 시작 시각) 다시 그림
 document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
 
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if (window.desktop) {
+  // PC 앱: 창 제목줄 자리를 비우고, 1분마다 하루가 바뀌었는지 확인
+  document.documentElement.classList.add('desktop');
+  window.desktop.onTick(() => { if (today() !== renderedDay) render(); });
+} else if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
 // 저장소 영구 보존 요청 (지원 브라우저만)
 navigator.storage?.persist?.();
 
