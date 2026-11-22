@@ -1,14 +1,14 @@
 // 기기 간 병합 (순수 함수만 — 네트워크·DOM 접근 금지)
-// 기록 단위: item(항목) · log(복습/미루기) · settings('main' 하나)
+// 기록 단위: item(항목) · log(복습/미루기) · task(할 일) · settings('main' 하나)
 // 규칙: 같은 기록이면 updatedAt이 더 큰 쪽이 이김. 지우기는 실제로 지우지 않고 표시만 한다
-//       (item.status='deleted', log.deleted=true) → 지운 것도 다른 기기로 전해진다.
+//       (item·task.status='deleted', log.deleted=true) → 지운 것도 다른 기기로 전해진다.
 
-export const SCHEMA = 2;
+export const SCHEMA = 3;
 
 export const keyOf = (kind, id) => `${kind}:${id}`;
 
 export function emptyDb(defaultSettings) {
-  return { schema: SCHEMA, items: [], logs: [], settings: { ...defaultSettings, updatedAt: 0 }, dayOffset: 0, sync: emptySync() };
+  return { schema: SCHEMA, items: [], logs: [], tasks: [], settings: { ...defaultSettings, updatedAt: 0 }, dayOffset: 0, sync: emptySync() };
 }
 export const emptySync = () => ({ cursor: null, dirty: [], lastSyncAt: null });
 
@@ -25,7 +25,12 @@ export function migrate(raw) {
       sync: emptySync(),
     };
   }
+  if (raw.schema === 2) {
+    // 할 일 추가. 옛 버전은 모르는 종류(task)를 건너뛴 채 받기 위치만 넘어갔을 수 있으니 처음부터 다시 받음
+    raw = { ...raw, schema: 3, tasks: [], sync: { ...(raw.sync || emptySync()), cursor: null } };
+  }
   if (raw.schema !== SCHEMA) return null;
+  if (!Array.isArray(raw.tasks)) raw.tasks = [];
   if (!raw.sync) raw.sync = emptySync();
   return raw;
 }
@@ -41,6 +46,7 @@ export function markAllDirty(db) {
   db.sync.dirty = [
     ...db.items.map((i) => keyOf('item', i.id)),
     ...db.logs.map((l) => keyOf('log', l.id)),
+    ...db.tasks.map((x) => keyOf('task', x.id)),
     keyOf('settings', 'main'),
   ];
 }
@@ -48,6 +54,7 @@ export function markAllDirty(db) {
 function find(db, kind, id) {
   if (kind === 'item') return db.items.find((x) => x.id === id);
   if (kind === 'log') return db.logs.find((x) => x.id === id);
+  if (kind === 'task') return db.tasks.find((x) => x.id === id);
   if (kind === 'settings' && id === 'main') return db.settings;
   return undefined;
 }
@@ -70,6 +77,7 @@ export function applyRemote(db, rows) {
   // 같은 기록을 빨리 찾도록 색인
   const itemIdx = new Map(db.items.map((x, n) => [x.id, n]));
   const logIdx = new Map(db.logs.map((x, n) => [x.id, n]));
+  const taskIdx = new Map(db.tasks.map((x, n) => [x.id, n]));
   const dirty = new Set(db.sync.dirty);
   for (const r of rows) {
     if (!r || !r.data || typeof r.id !== 'string') continue;
@@ -84,6 +92,10 @@ export function applyRemote(db, rows) {
       remote.id = r.id;
       if (logIdx.has(r.id)) db.logs[logIdx.get(r.id)] = remote;
       else { logIdx.set(r.id, db.logs.length); db.logs.push(remote); }
+    } else if (r.kind === 'task') {
+      remote.id = r.id;
+      if (taskIdx.has(r.id)) db.tasks[taskIdx.get(r.id)] = remote;
+      else { taskIdx.set(r.id, db.tasks.length); db.tasks.push(remote); }
     } else if (r.kind === 'settings' && r.id === 'main') {
       db.settings = remote;
     } else continue;

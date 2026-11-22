@@ -146,3 +146,8 @@ test('알림용 과목별 개수', () => {
   assert.equal(subjectSummary([e('a'), e('b'), e('c'), e('d'), e('a')]), 'a 2, b 1, c 1 외 1과목');
   assert.equal(subjectSummary([]), '');
 });
+
+test('할 일 입력은 범위를 나누지 않음', () => {
+  const r = parseQuickInput('행정법 3~5장 #행정법\n영어 단어', '기타', { expand: false });
+  assert.deepEqual(r, [{ title: '행정법 3~5장', subject: '행정법' }, { title: '영어 단어', subject: '기타' }]);
+});

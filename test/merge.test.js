@@ -12,7 +12,8 @@ const base = () => {
 test('v1 → v2 변환', () => {
   const v1 = { schema: 1, items: [{ id: 'a', createdAt: 5 }], logs: [{ id: 'b', at: 7 }], settings: { dailyLimit: 9 }, dayOffset: 0 };
   const v2 = migrate(v1);
-  assert.equal(v2.schema, 2);
+  assert.equal(v2.schema, 3);
+  assert.deepEqual(v2.tasks, []);
   assert.equal(v2.items[0].updatedAt, 5);
   assert.equal(v2.logs[0].updatedAt, 7);
   assert.equal(v2.settings.dailyLimit, 9);
@@ -67,4 +68,30 @@ test('올린 뒤 표시 해제, 올리는 사이 또 바뀐 건 남김', () => {
   db.items[0].updatedAt = 500; // 올리는 도중 수정
   clearPushed(db, rows);
   assert.deepEqual(db.sync.dirty, ['item:i1']);
+});
+
+test('스키마 2 → 3: 할 일 목록 추가, 처음부터 다시 받기', () => {
+  const v2 = { schema: 2, items: [], logs: [], settings: {}, sync: { cursor: '2026-11-21T00:00:00Z', dirty: ['item:a'], lastSyncAt: 1 } };
+  const v3 = migrate(v2);
+  assert.equal(v3.schema, 3);
+  assert.deepEqual(v3.tasks, []);
+  assert.equal(v3.sync.cursor, null);
+  assert.deepEqual(v3.sync.dirty, ['item:a']);
+});
+
+test('할 일도 동기화: 올리기·받기·병합', () => {
+  const db = emptyDb({});
+  db.tasks.push({ id: 't1', title: '행정법 3~5장', on: '2026-11-22', doneOn: null, updatedAt: 100 });
+  markDirty(db, 'task', 't1');
+  assert.equal(dirtyRows(db)[0].kind, 'task');
+  markAllDirty(db);
+  assert.ok(db.sync.dirty.includes('task:t1'));
+  const n = applyRemote(db, [
+    { kind: 'task', id: 't1', data: { title: '행정법 3~5장', doneOn: '2026-11-22' }, updated_at: 200 },
+    { kind: 'task', id: 't2', data: { title: '영어 단어' }, updated_at: 50 },
+  ]);
+  assert.equal(n, 2);
+  assert.equal(db.tasks.find((x) => x.id === 't1').doneOn, '2026-11-22');
+  assert.equal(db.tasks.length, 2);
+  assert.ok(!db.sync.dirty.includes('task:t1'));
 });

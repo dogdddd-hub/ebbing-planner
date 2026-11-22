@@ -24,18 +24,26 @@
     <!-- 오늘 -->
     <section id="view-today" class="view">
       <div class="entry">
+        <div id="mode-seg" class="seg">
+          <button type="button" data-mode="plan">할 일</button>
+          <button type="button" data-mode="did">공부한 것</button>
+        </div>
         <div id="subject-chips" class="chips"></div>
         <form id="quick-form">
           <textarea id="quick-input" rows="1" placeholder="예) 행정법 3~5장 #행정법"></textarea>
           <button type="submit">추가</button>
         </form>
         <div id="date-row" class="date-row">
-          <span class="hint">공부한 날</span>
-          <button type="button" class="chip" data-back="0">오늘</button>
-          <button type="button" class="chip" data-back="1">어제</button>
-          <span class="chip pick" id="date-pick">날짜 선택<input type="date" id="quick-date" aria-label="공부한 날 선택"></span>
+          <span class="hint" id="date-label">공부한 날</span>
+          <button type="button" class="chip" data-k="0">오늘</button>
+          <button type="button" class="chip" data-k="1" id="date-k1">어제</button>
+          <span class="chip pick" id="date-pick">날짜 선택<input type="date" id="quick-date" aria-label="날짜 선택"></span>
           <span id="added-today" class="hint added"></span>
         </div>
+      </div>
+      <div id="plan" class="plan hidden">
+        <div class="plan-head"><b>오늘 할 일</b><span id="plan-count" class="hint"></span></div>
+        <ul id="plan-list" class="plan-list"></ul>
       </div>
       <div id="progress" class="progress hidden">
         <div class="progress-head"><b>오늘 복습</b><span id="progress-text"></span></div>
@@ -51,7 +59,10 @@
       <p id="empty-today" class="empty hidden">오늘 복습할 항목이 없습니다.</p>
       <div id="week" class="week-box"></div>
       <details id="done-box" class="done-box hidden">
-        <summary>오늘 끝낸 복습 <b id="done-count">0</b>개 <span class="hint">· 평가 바꾸기·취소</span></summary>
+        <summary>오늘 한 것 <span id="done-sum" class="hint"></span></summary>
+        <p id="done-new-h" class="hint sub-h">새로 공부한 것</p>
+        <ul id="done-new" class="list"></ul>
+        <p id="done-list-h" class="hint sub-h">끝낸 복습 · 평가 바꾸기·취소</p>
         <ul id="done-list" class="list"></ul>
       </details>
     </section>
@@ -65,7 +76,7 @@
       </div>
       <p id="cal-stats" class="cal-stats"></p>
       <div id="cal-grid" class="cal-grid"></div>
-      <p class="hint"><b class="lg-due">파란 숫자</b> 앞으로 잡힌 복습(예상) · <b class="lg-done">초록 숫자</b> 그날 끝낸 복습</p>
+      <p class="hint"><b class="lg-due">파란 숫자</b> 앞으로 잡힌 복습(예상) · <b class="lg-done">초록 숫자</b> 그날 끝낸 복습 · <b class="lg-task">●</b> 할 일</p>
       <ul id="cal-day-list" class="list"></ul>
     </section>
 
@@ -142,6 +153,23 @@
         <button type="submit" class="primary">저장</button>
       </div>
       <button type="button" id="ed-delete" class="text-danger">이 항목 삭제</button>
+    </form>
+  </dialog>
+
+  <!-- 할 일 고치기 -->
+  <dialog id="task-dlg">
+    <form id="task-form">
+      <h3>할 일 고치기</h3>
+      <label>할 일<input id="tk-title" maxlength="200" required></label>
+      <label>과목<select id="tk-subject"></select></label>
+      <label id="tk-date-label">할 날<input type="date" id="tk-date"></label>
+      <p id="tk-info" class="hint"></p>
+      <button type="button" id="tk-tomorrow" class="wide">내일로 미루기</button>
+      <div class="dlg-row">
+        <button type="button" id="tk-cancel">취소</button>
+        <button type="submit" class="primary">저장</button>
+      </div>
+      <button type="button" id="tk-delete" class="text-danger">이 할 일 삭제</button>
     </form>
   </dialog>
 

@@ -1,6 +1,6 @@
 import {
   DEFAULT_SETTINGS, localDate, addDays, diffDays, computeAll, todayQueue,
-  spreadOverflow, projectDates, parseQuickInput, RATING, isWeak, weakScore, subjectSummary,
+  spreadOverflow, projectDates, parseQuickInput, expandRange, RATING, isWeak, weakScore, subjectSummary,
 } from './scheduler.js';
 import { emptyDb, migrate, markDirty, markAllDirty } from './merge.js';
 import * as sync from './sync.js';
@@ -39,11 +39,11 @@ const dow = (ds) => DOW[new Date(ds + 'T00:00:00').getDay()];
 
 // ---------- 되돌리기 토스트 ----------
 let toastTimer;
-function toast(msg, undo) {
+function toast(msg, undo, label = '되돌리기') {
   document.querySelector('.toast')?.remove();
   const el = document.createElement('div');
   el.className = 'toast';
-  el.innerHTML = esc(msg) + (undo ? ' <button>되돌리기</button>' : '');
+  el.innerHTML = esc(msg) + (undo ? ` <button>${esc(label)}</button>` : '');
   if (undo) el.querySelector('button').onclick = () => { undo(); el.remove(); render(); };
   document.body.appendChild(el);
   clearTimeout(toastTimer);
@@ -63,7 +63,7 @@ function setSubjects(list) {
 function ensureSubjects() {
   const have = new Set(subjects().map((x) => x.name));
   const add = [];
-  for (const it of db.items) {
+  for (const it of [...db.items, ...db.tasks]) {
     if (it.status === 'active' && it.subject && !have.has(it.subject)) { have.add(it.subject); add.push(it.subject); }
   }
   if (!add.length) return false;
@@ -103,6 +103,81 @@ function addItems(text) {
   }
   save();
   return parsed.length;
+}
+
+// ---------- 할 일 ----------
+// task: { id, title, subject, on(할 날), doneOn(끝낸 날|null), itemIds(끝낼 때 만든 복습 항목), status }
+// 끝내면 그날 공부한 것으로 항목을 만들고 복습이 시작됨. 못 끝낸 건 다음 날 목록에 계속 남음
+const mode = () => (ui.mode === 'did' ? 'did' : 'plan');
+// 할 날 (null = 오늘). 날이 바뀌면 다시 오늘로
+let planOn = null, planOnSetDay = null;
+const planDate = () => {
+  const t = today();
+  if (!planOn || planOnSetDay !== t || planOn <= t) { planOn = null; return t; }
+  return planOn;
+};
+function setPlanOn(d) { planOn = d && d > today() ? d : null; planOnSetDay = today(); }
+
+function addTasks(text) {
+  const parsed = parseQuickInput(text, ui.subject || '기타', { expand: false });
+  const on = planDate();
+  for (const p of parsed) {
+    const x = { id: uid(), title: p.title, subject: p.subject, on, doneOn: null, itemIds: [], status: 'active', createdAt: Date.now() };
+    touch('task', x);
+    db.tasks.push(x);
+  }
+  save();
+  return parsed.length;
+}
+const findTask = (id) => db.tasks.find((x) => x.id === id && x.status === 'active');
+// 끝낸 할 일로 만든 항목 중 아직 남아 있는 것
+const taskItems = (x) => (x.itemIds || []).map((id) => db.items.find((i) => i.id === id)).filter((i) => i && i.status === 'active');
+// 오늘 목록: 오늘까지 할 일 중 못 끝낸 것 + 오늘 끝낸 것
+const todayTasks = (t) => db.tasks
+  .filter((x) => x.status === 'active' && ((!x.doneOn && x.on <= t) || x.doneOn === t))
+  .sort((a, b) => a.on.localeCompare(b.on) || (a.createdAt || 0) - (b.createdAt || 0));
+
+function completeTask(id) {
+  const x = findTask(id);
+  if (!x || x.doneOn) return;
+  const t = today();
+  const ids = [];
+  for (const title of expandRange(x.title)) {
+    const it = { id: uid(), title, subject: x.subject, note: '', studiedOn: t, status: 'active', createdAt: Date.now(), taskId: x.id };
+    touch('item', it);
+    db.items.push(it);
+    ids.push(it.id);
+  }
+  x.doneOn = t; x.itemIds = ids;
+  touch('task', x);
+  save();
+  // 모의고사처럼 복습할 필요 없는 일은 바로 뺄 수 있게
+  toast(`끝! 복습 ${ids.length}개 시작`, () => dropTaskReview(x), '복습 빼기');
+}
+function dropTaskReview(x) {
+  for (const it of taskItems(x)) { it.status = 'deleted'; touch('item', it); }
+  x.itemIds = [];
+  touch('task', x);
+  save();
+}
+// 체크 풀기: 만든 항목도 지움 (이미 복습한 항목은 기록이 있으니 남김)
+function uncheckTask(id) {
+  const x = findTask(id);
+  if (!x || !x.doneOn) return;
+  const reviewed = new Set(db.logs.filter((l) => l.kind === 'review' && !l.deleted).map((l) => l.itemId));
+  for (const it of taskItems(x)) if (!reviewed.has(it.id)) { it.status = 'deleted'; touch('item', it); }
+  x.doneOn = null; x.itemIds = [];
+  touch('task', x);
+  save();
+  toast('체크를 풀었어요');
+}
+function removeTask(id) {
+  const x = findTask(id);
+  if (!x) return;
+  x.status = 'deleted';
+  touch('task', x);
+  save();
+  toast('삭제됨', () => { x.status = 'active'; touch('task', x); save(); });
 }
 
 const LABEL = { 1: '잊음', 2: '애매', 3: '기억남' };
@@ -201,6 +276,7 @@ function streakDays(t) {
   const days = new Set();
   for (const l of db.logs) if (l.kind === 'review' && !l.deleted) days.add(l.on);
   for (const i of db.items) if (i.status !== 'deleted') days.add(i.studiedOn);
+  for (const x of db.tasks) if (x.status === 'active' && x.doneOn) days.add(x.doneOn);
   let d = days.has(t) ? t : addDays(t, -1), n = 0;
   while (days.has(d)) { n++; d = addDays(d, -1); }
   return n;
@@ -229,24 +305,54 @@ function renderChips() {
   $('#subject-chips').innerHTML = list.map((x) =>
     `<button type="button" class="chip${ui.subject === x.name ? ' on' : ''}" data-name="${esc(x.name)}" style="--c:${x.color}">${esc(x.name)}</button>`).join('') +
     `<button type="button" class="chip add" data-add="1">＋ 과목</button>`;
-  $('#quick-input').placeholder = ui.subject ? `${ui.subject}에서 공부한 것 (예: 3~5장)` : '예) 행정법 3~5장 #행정법';
+  const plan = mode() === 'plan';
+  $('#quick-input').placeholder = ui.subject ? `${ui.subject}에서 ${plan ? '할 것' : '공부한 것'} (예: 3~5장)`
+    : plan ? '할 것 (예: 행정법 3~5장 #행정법)' : '공부한 것 (예: 행정법 3~5장 #행정법)';
 }
 
+// 할 일이면 오늘·내일·날짜 선택(앞날), 공부한 것이면 오늘·어제·날짜 선택(지난날)
 function renderDateRow(t) {
-  const on = addDate();
-  const back = diffDays(t, on);
-  $('#date-row').querySelectorAll('[data-back]').forEach((b) => b.classList.toggle('on', Number(b.dataset.back) === back));
+  const plan = mode() === 'plan';
+  document.querySelectorAll('#mode-seg [data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === mode()));
+  $('#date-label').textContent = plan ? '할 날' : '공부한 날';
+  $('#date-k1').textContent = plan ? '내일' : '어제';
+  const on = plan ? planDate() : addDate();
+  const k = Math.abs(diffDays(on, t));
+  $('#date-row').querySelectorAll('[data-k]').forEach((b) => b.classList.toggle('on', Number(b.dataset.k) === k));
   const pick = $('#date-pick');
-  pick.classList.toggle('on', back > 1);
-  pick.firstChild.textContent = back > 1 ? `${fmt(on)} (${dow(on)})` : '날짜 선택';
+  pick.classList.toggle('on', k > 1);
+  pick.firstChild.textContent = k > 1 ? `${fmt(on)} (${dow(on)})` : '날짜 선택';
   const inp = $('#quick-date');
-  inp.max = addDays(t, -1);
-  inp.value = back > 1 ? on : '';
+  inp.removeAttribute(plan ? 'max' : 'min');
+  if (plan) inp.min = addDays(t, 1); else inp.max = addDays(t, -1);
+  inp.value = k > 1 ? on : '';
+  $('#added-today').classList.toggle('hidden', plan);
+}
+
+function taskHTML(x, t) {
+  const done = !!x.doneOn;
+  const n = done ? taskItems(x).length : 0;
+  const late = !done && x.on < t ? diffDays(t, x.on) : 0;
+  const sub = done ? (n ? `복습 ${n}개 시작` : '복습 안 함')
+    : late ? `${late === 1 ? '어제' : fmt(x.on)} 못 한 것` : '';
+  return `<li class="task${done ? ' done' : ''}" data-task="${x.id}">
+    <button type="button" class="tbox" data-check="1" aria-label="${done ? '체크 풀기' : '끝냄'}">${done ? '✓' : ''}</button>
+    <div class="tb"><div class="tt">${esc(x.title)}</div>${sub ? `<div class="meta${late ? ' carry' : ''}">${sub}</div>` : ''}</div>
+    <div class="side">${tagHTML(x.subject)}<button type="button" class="more" data-tedit="1" aria-label="고치기">⋯</button></div></li>`;
+}
+
+function renderPlan(t) {
+  const list = todayTasks(t);
+  $('#plan').classList.toggle('hidden', !list.length);
+  const done = list.filter((x) => x.doneOn).length;
+  $('#plan-count').textContent = list.length ? (done === list.length ? '다 끝냄 ✓' : `${done} / ${list.length}`) : '';
+  $('#plan-list').innerHTML = list.map((x) => taskHTML(x, t)).join('');
 }
 
 function renderToday(states, t, s) {
   renderChips();
   renderDateRow(t);
+  renderPlan(t);
   const q = todayQueue(db.items, states, t, s);
   const doneToday = db.logs.filter((l) => l.kind === 'review' && !l.deleted && l.on === t).length;
   const addedToday = db.items.filter((i) => i.status === 'active' && i.studiedOn === t).length;
@@ -273,7 +379,8 @@ function renderToday(states, t, s) {
   $('#kbd-hint').classList.toggle('hidden', !shown.length);
   $('#empty-today').classList.toggle('hidden', shown.length > 0);
   const streak = streakDays(t);
-  $('#empty-today').textContent = !db.items.some((i) => i.status === 'active') ? '위 입력창에 오늘 공부한 것을 적어 보세요. 복습일은 알아서 잡아 드려요.'
+  $('#empty-today').textContent = !db.items.some((i) => i.status === 'active')
+    ? (db.tasks.some((x) => x.status === 'active') ? '할 일을 끝내고 체크하면 복습이 여기에 잡혀요.' : '위에 오늘 할 일을 적어 보세요. 끝내고 체크하면 복습일은 알아서 잡아 드려요.')
     : doneToday ? `오늘 복습을 다 끝냈어요. 수고했어요!${streak >= 2 ? ` 연속 ${streak}일째예요.` : ''}` : '오늘 복습할 항목이 없습니다.';
   renderWeek(states, t, s);
   renderDone(t);
@@ -315,19 +422,26 @@ function renderWeek(states, t, s) {
     }).join('') + '</div>';
 }
 
-// 오늘 끝낸 복습 (평가 바꾸기·취소)
+// 오늘 한 것: 새로 공부한 것 + 끝낸 복습(평가 바꾸기·취소) + 끝낸 할 일 수
+const newRowHTML = (it) => `<li class="done-row click" data-item="${it.id}"><div class="dl"><span class="t">${esc(it.title)}</span>${tagHTML(it.subject)}</div></li>`;
 function renderDone(t) {
-  const logs = db.logs.filter((l) => l.kind === 'review' && !l.deleted && l.on === t).sort((a, b) => (b.at || 0) - (a.at || 0));
   const byId = new Map(db.items.map((i) => [i.id, i]));
+  const logs = db.logs.filter((l) => l.kind === 'review' && !l.deleted && l.on === t && byId.get(l.itemId)?.status === 'active')
+    .sort((a, b) => (b.at || 0) - (a.at || 0));
   const rows = logs.map((l) => {
     const it = byId.get(l.itemId);
-    if (!it || it.status === 'deleted') return '';
     return `<li class="done-row" data-log="${l.id}"><div class="dl"><span class="t">${esc(it.title)}</span>${tagHTML(it.subject)}</div>
       <div class="rate small">${[1, 2, 3].map((r) => `<button class="${RCLS[r]}${l.rating === r ? ' on' : ''}" data-rr="${r}">${LABEL[r]}</button>`).join('')}
       <button class="x" data-cancel="1" title="이 복습 기록 취소">취소</button></div></li>`;
   }).join('');
-  $('#done-box').classList.toggle('hidden', !rows);
-  $('#done-count').textContent = logs.length;
+  const added = db.items.filter((i) => i.status === 'active' && i.studiedOn === t);
+  const tasksDone = db.tasks.filter((x) => x.status === 'active' && x.doneOn === t).length;
+  const parts = [added.length && `새로 공부 ${added.length}`, logs.length && `복습 ${logs.length}`, tasksDone && `할 일 ${tasksDone}`].filter(Boolean);
+  $('#done-box').classList.toggle('hidden', !parts.length);
+  $('#done-sum').textContent = parts.length ? '· ' + parts.join(' · ') : '';
+  $('#done-new-h').classList.toggle('hidden', !added.length);
+  $('#done-new').innerHTML = added.map(newRowHTML).join('');
+  $('#done-list-h').classList.toggle('hidden', !logs.length);
   $('#done-list').innerHTML = rows;
 }
 
@@ -358,6 +472,15 @@ function renderCalendar(states, t, s) {
     if (!doneBy.has(l.on)) doneBy.set(l.on, []);
     doneBy.get(l.on).push(l);
   }
+  // 할 일: 지난 날은 그날 끝낸 것, 오늘·앞날은 그날 할 것 (오늘은 밀린 것도)
+  const tasksOn = (d) => db.tasks.filter((x) => x.status === 'active' &&
+    (d < t ? x.doneOn === d : d === t ? (x.doneOn === t || (!x.doneOn && x.on <= t)) : (!x.doneOn && x.on === d)));
+  const taskDays = new Set();
+  for (const x of db.tasks) {
+    if (x.status !== 'active') continue;
+    if (x.doneOn) taskDays.add(x.doneOn);
+    else taskDays.add(x.on < t ? t : x.on);
+  }
   const monthDone = db.logs.filter((l) => counted(l) && l.on.startsWith(calMonth)).length;
   const streak = streakDays(t);
   $('#cal-stats').innerHTML = `${streak ? `<b>연속 ${streak}일째</b> 공부 중 · ` : ''}${m}월에 복습 <b>${monthDone}</b>개`;
@@ -369,14 +492,23 @@ function renderCalendar(states, t, s) {
     const past = d < t;
     const n = (past ? doneBy.get(d) : byDate.get(d))?.length || 0;
     const cls = ['d', d.slice(0, 7) !== calMonth && 'out', d === t && 'today', d === calSel && 'sel', d === s.examDate && 'exam'].filter(Boolean).join(' ');
-    cells += `<div class="${cls}" data-d="${d}"><span>${+d.slice(8)}</span>${n ? `<span class="n${past ? ' done' : ''}">${n}</span>` : ''}</div>`;
+    cells += `<div class="${cls}" data-d="${d}"><span>${+d.slice(8)}</span>${taskDays.has(d) ? '<i class="tdot"></i>' : ''}${n ? `<span class="n${past ? ' done' : ''}">${n}</span>` : ''}</div>`;
   }
   $('#cal-grid').innerHTML = cells;
-  if (calSel && calSel < t) {
-    // 지난 날: 그날 한 복습과 새로 공부한 것
+  if (!calSel) { $('#cal-day-list').innerHTML = ''; return; }
+  const dayTasks = tasksOn(calSel);
+  const head = (txt) => `<li class="hint">${fmt(calSel)} (${dow(calSel)}) — ${txt}</li>`;
+  const sec = (txt) => `<li class="hint sub-h">${txt}</li>`;
+  const taskRows = dayTasks.length ? sec(calSel < t ? '끝낸 할 일' : '할 일') + `<li><ul class="plan-list cal-day-tasks">${dayTasks.map((x) => taskHTML(x, t)).join('')}</ul></li>` : '';
+  if (calSel < t) {
+    // 지난 날: 그날 끝낸 할 일, 새로 공부한 것, 한 복습
     const logs = doneBy.get(calSel) || [];
-    const added = db.items.filter((i) => i.status !== 'deleted' && i.studiedOn === calSel).length;
-    $('#cal-day-list').innerHTML = `<li class="hint">${fmt(calSel)} (${dow(calSel)}) — 복습 ${logs.length}개 끝냄${added ? ` · 새로 공부 ${added}개` : ''}</li>` +
+    const added = db.items.filter((i) => i.status === 'active' && i.studiedOn === calSel);
+    const parts = [dayTasks.length && `할 일 ${dayTasks.length}개`, added.length && `새로 공부 ${added.length}개`,
+      (logs.length || (!dayTasks.length && !added.length)) && `복습 ${logs.length}개`].filter(Boolean);
+    $('#cal-day-list').innerHTML = head(parts.join(' · ')) + taskRows +
+      (added.length ? sec('새로 공부한 것') + added.map(newRowHTML).join('') : '') +
+      (logs.length ? sec('복습') : '') +
       logs.map((l) => {
         const it = byId.get(l.itemId);
         return it ? `<li class="done-row"><div class="dl"><span class="t">${esc(it.title)}</span>
@@ -384,11 +516,12 @@ function renderCalendar(states, t, s) {
       }).join('');
     return;
   }
-  const list = calSel ? byDate.get(calSel) || [] : [];
-  $('#cal-day-list').innerHTML = calSel
-    ? `<li class="hint">${fmt(calSel)} (${dow(calSel)}) — ${calSel === t ? `남은 복습 ${list.length}개` : `복습 ${list.length}개 예정`}${calSel === s.examDate ? ' · 시험일' : ''}</li>` +
-      list.map((x) => cardHTML(x.it, x.st, t, false)).join('')
-    : '';
+  const list = byDate.get(calSel) || [];
+  const txt = [dayTasks.length && `할 일 ${dayTasks.length}개`,
+    (list.length || !dayTasks.length) && (calSel === t ? `남은 복습 ${list.length}개` : `복습 ${list.length}개 예정`),
+    calSel === s.examDate && '시험일'].filter(Boolean).join(' · ');
+  $('#cal-day-list').innerHTML = head(txt) + taskRows + (list.length && dayTasks.length ? sec('복습') : '') +
+    list.map((x) => cardHTML(x.it, x.st, t, false)).join('');
 }
 
 let subjQuery = '';
@@ -457,6 +590,7 @@ function renameSubject(oldName) {
   if (!name || name === oldName) return;
   if (subjects().some((x) => x.name === name)) return toast('이미 있는 과목입니다');
   for (const it of db.items) if (it.subject === oldName) { it.subject = name; touch('item', it); }
+  for (const x of db.tasks) if (x.subject === oldName) { x.subject = name; touch('task', x); }
   setSubjects(subjects().map((x) => (x.name === oldName ? { ...x, name } : x)));
   if (ui.subject === oldName) { ui.subject = name; saveUi(); }
   save();
@@ -470,6 +604,8 @@ function cycleColor(name) {
 function removeSubject(name) {
   const n = db.items.filter((i) => i.status === 'active' && i.subject === name).length;
   if (n) return toast(`항목 ${n}개가 있어 지울 수 없습니다. 항목을 먼저 지우세요`);
+  const k = db.tasks.filter((x) => x.status === 'active' && !x.doneOn && x.subject === name).length;
+  if (k) return toast(`남은 할 일 ${k}개가 있어 지울 수 없습니다`);
   setSubjects(subjects().filter((x) => x.name !== name));
   save();
   toast('과목 삭제됨');
@@ -506,6 +642,14 @@ qi.addEventListener('keydown', (e) => {
 $('#quick-form').onsubmit = (e) => {
   e.preventDefault();
   if (!qi.value.trim()) return;
+  if (mode() === 'plan') {
+    const on = planDate();
+    const n = addTasks(qi.value);
+    qi.value = ''; qi.style.height = 'auto';
+    toast(on === today() ? `오늘 할 일 ${n}개 추가` : `${fmt(on)} (${dow(on)}) 할 일 ${n}개 추가 · 달력에서 보여요`);
+    render();
+    return;
+  }
   const on = addDate();
   const n = addItems(qi.value);
   qi.value = ''; qi.style.height = 'auto';
@@ -522,7 +666,14 @@ $('#today-list').onclick = (e) => {
   const id = editTarget(e);
   if (id) openEditor(id);
 };
-$('#cal-day-list').onclick = (e) => { const id = editTarget(e); if (id) openEditor(id); };
+$('#cal-day-list').onclick = (e) => {
+  const task = e.target.closest('[data-task]')?.dataset.task;
+  if (task) { openTaskEditor(task); return; }
+  const item = e.target.closest('[data-item]')?.dataset.item;
+  if (item) { openEditor(item); return; }
+  const id = editTarget(e);
+  if (id) openEditor(id);
+};
 $('#today-filter').onclick = (e) => {
   const b = e.target.closest('button[data-f]');
   if (!b) return;
@@ -531,11 +682,91 @@ $('#today-filter').onclick = (e) => {
   render();
 };
 $('#date-row').onclick = (e) => {
-  const b = e.target.closest('button[data-back]');
-  if (b) { setAddOn(addDays(today(), -Number(b.dataset.back))); render(); return; }
+  const b = e.target.closest('button[data-k]');
+  if (b) {
+    const k = Number(b.dataset.k);
+    if (mode() === 'plan') setPlanOn(addDays(today(), k)); else setAddOn(addDays(today(), -k));
+    render();
+    return;
+  }
   if (e.target.closest('#date-pick')) { try { $('#quick-date').showPicker(); } catch {} }
 };
-$('#quick-date').onchange = (e) => { setAddOn(e.target.value || null); render(); };
+$('#quick-date').onchange = (e) => {
+  if (mode() === 'plan') setPlanOn(e.target.value || null); else setAddOn(e.target.value || null);
+  render();
+};
+$('#mode-seg').onclick = (e) => {
+  const b = e.target.closest('button[data-mode]');
+  if (!b || b.dataset.mode === mode()) return;
+  ui.mode = b.dataset.mode;
+  saveUi();
+  render();
+  qi.focus();
+};
+$('#plan-list').onclick = (e) => {
+  const row = e.target.closest('[data-task]');
+  if (!row) return;
+  if (e.target.closest('[data-tedit]')) { openTaskEditor(row.dataset.task); return; }
+  const x = findTask(row.dataset.task);
+  if (!x) return;
+  if (x.doneOn) uncheckTask(x.id); else completeTask(x.id);
+  render();
+};
+$('#done-new').onclick = (e) => { const id = e.target.closest('[data-item]')?.dataset.item; if (id) openEditor(id); };
+
+// ---------- 할 일 고치기 ----------
+let taskEditId = null;
+const tdlg = $('#task-dlg');
+function openTaskEditor(id) {
+  const x = findTask(id);
+  if (!x) return;
+  taskEditId = id;
+  const t = today();
+  const names = subjects().map((s) => s.name);
+  if (!names.includes(x.subject)) names.push(x.subject);
+  $('#tk-title').value = x.title;
+  $('#tk-subject').innerHTML = names.map((n) => `<option${n === x.subject ? ' selected' : ''}>${esc(n)}</option>`).join('');
+  $('#tk-date-label').classList.toggle('hidden', !!x.doneOn);
+  $('#tk-date').value = x.on;
+  $('#tk-date').min = x.on < t ? x.on : t;
+  const n = taskItems(x).length;
+  $('#tk-info').textContent = x.doneOn
+    ? `${fmt(x.doneOn)} 끝냄 · ${n ? `복습 ${n}개 시작함 (복습 항목은 따로 고쳐요)` : '복습 안 함'}`
+    : x.on < t ? `${fmt(x.on)}에 하려던 일이에요` : '';
+  $('#tk-tomorrow').classList.toggle('hidden', !!x.doneOn);
+  tdlg.showModal();
+  document.activeElement?.blur();
+}
+$('#task-form').onsubmit = (e) => {
+  e.preventDefault();
+  const x = findTask(taskEditId);
+  if (!x) return tdlg.close();
+  const title = $('#tk-title').value.trim().replace(/\s+/g, ' ');
+  if (!title) return toast('할 일을 입력하세요');
+  const next = { title, subject: $('#tk-subject').value };
+  if (!x.doneOn) {
+    const d = $('#tk-date').value;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return toast('할 날을 고르세요');
+    next.on = d;
+  }
+  if (Object.keys(next).some((k) => x[k] !== next[k])) { Object.assign(x, next); touch('task', x); save(); toast('고쳤어요'); }
+  tdlg.close();
+  render();
+};
+$('#tk-cancel').onclick = () => tdlg.close();
+$('#tk-tomorrow').onclick = () => {
+  const x = findTask(taskEditId);
+  if (x && !x.doneOn) {
+    const prev = x.on;
+    x.on = addDays(today(), 1);
+    touch('task', x); save();
+    toast('내일로 미뤘어요', () => { x.on = prev; touch('task', x); save(); });
+  }
+  tdlg.close();
+  render();
+};
+$('#tk-delete').onclick = () => { removeTask(taskEditId); tdlg.close(); render(); };
+tdlg.addEventListener('click', (e) => { if (e.target === tdlg) tdlg.close(); });
 
 // ---------- 항목 고치기 ----------
 let editId = null;
@@ -610,7 +841,7 @@ $('#show-done').onchange = (e) => { ui.showDone = e.target.checked; saveUi(); re
 $('#only-weak').onchange = (e) => { ui.onlyWeak = e.target.checked; saveUi(); render(); };
 // PC: 1·2·3 키로 맨 위 카드 평가 (입력 중이 아닐 때)
 document.addEventListener('keydown', (e) => {
-  if (view !== 'today' || dlg.open || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+  if (view !== 'today' || dlg.open || tdlg.open || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName)) return;
   const r = { 1: 1, 2: 2, 3: 3 }[e.key];
   const card = $('#today-list .card');

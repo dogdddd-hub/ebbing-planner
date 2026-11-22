@@ -192,7 +192,8 @@ export function expandRange(title) {
   return out || [title];
 }
 
-export function parseQuickInput(text, fallbackSubject = '기타') {
+// expand=false: 범위를 나누지 않음 (할 일은 '3~5장' 한 줄로 두고, 끝냈을 때 나눔)
+export function parseQuickInput(text, fallbackSubject = '기타', { expand = true } = {}) {
   return text
     .split('\n')
     .map((l) => l.trim())
@@ -201,6 +202,6 @@ export function parseQuickInput(text, fallbackSubject = '기타') {
       const m = line.match(/#(\S+)/);
       const subject = m ? m[1] : fallbackSubject;
       const title = line.replace(/#\S+/g, '').replace(/\s+/g, ' ').trim();
-      return expandRange(title || line).map((t) => ({ title: t, subject }));
+      return (expand ? expandRange(title || line) : [title || line]).map((t) => ({ title: t, subject }));
     });
 }

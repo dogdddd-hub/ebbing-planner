@@ -219,3 +219,33 @@ button.wide { width: 100%; margin-top: 10px; }
 #view-settings h3 .hint { font-weight: 400; }
 .adv { margin-top: 28px; border-top: 1px solid var(--line); padding-top: 12px; }
 .adv summary { color: var(--sub); cursor: pointer; margin-bottom: 10px; }
+
+/* 할 일 / 공부한 것 전환 */
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 3px; margin-bottom: 10px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+.seg button { border: 0; background: transparent; color: var(--sub); padding: 6px 0; font-size: 14px; border-radius: 8px; }
+.seg button.on { background: #2e2e2e; color: var(--text); font-weight: 600; }
+
+/* 오늘 할 일 */
+.plan { border-top: 1px solid var(--line); padding-top: 12px; margin-bottom: 14px; }
+.plan-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 2px; }
+.plan-list { list-style: none; margin: 0; padding: 0; }
+.task { display: flex; gap: 10px; align-items: flex-start; padding: 9px 2px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.task:last-child { border-bottom: 0; }
+.tbox { width: 22px; height: 22px; flex: none; padding: 0; margin-top: 1px; border-radius: 6px;
+  border: 1.5px solid #5a5a5a; background: transparent; color: #fff; font-size: 14px; line-height: 1; }
+.task.done .tbox { background: var(--good); border-color: var(--good); }
+.task .tb { flex: 1; min-width: 0; }
+.task .tt { word-break: break-all; }
+.task.done .tt { color: var(--sub); text-decoration: line-through; }
+.task .meta { color: var(--sub); font-size: 12px; }
+.task .meta.carry { color: var(--hard); }
+.task .side { display: flex; align-items: flex-start; gap: 4px; flex: none; }
+.cal-day-tasks .task { cursor: pointer; }
+.cal-grid .d { position: relative; }
+.cal-grid .tdot { position: absolute; top: 6px; right: 6px; width: 5px; height: 5px; border-radius: 50%; background: var(--hard); }
+.lg-task { color: var(--hard); }
+
+/* 오늘 한 것 */
+.done-box .sub-h { margin: 10px 0 4px; }
+.done-row.click { cursor: pointer; }

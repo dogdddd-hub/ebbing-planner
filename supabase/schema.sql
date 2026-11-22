@@ -3,13 +3,16 @@
 
 create table if not exists public.records (
   user_id    uuid   not null default auth.uid() references auth.users (id) on delete cascade,
-  kind       text   not null check (kind in ('item', 'log', 'settings')),
+  kind       text   not null check (kind in ('item', 'log', 'settings', 'task')),
   id         text   not null,
   data       jsonb  not null,
   updated_at bigint not null,                       -- 기기에서 고친 시각 (병합 기준)
   server_at  timestamptz not null default now(),    -- 서버에 들어온 시각 (받기 기준)
   primary key (user_id, kind, id)
 );
+-- 2026-11-22 '할 일'(task) 추가: 이미 만든 표도 새 종류를 받도록
+alter table public.records drop constraint if exists records_kind_check;
+alter table public.records add constraint records_kind_check check (kind in ('item', 'log', 'settings', 'task'));
 create index if not exists records_user_server_at on public.records (user_id, server_at);
 
 -- 서버에 들어온 시각은 항상 서버가 기록
