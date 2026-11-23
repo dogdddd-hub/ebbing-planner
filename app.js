@@ -147,36 +147,66 @@ function completeTask(id) {
   const x = findTask(id);
   if (!x || x.doneOn) return;
   const t = today();
-  const ids = [];
-  if (wantsReview(x)) for (const title of expandRange(x.title)) {
-    const it = { id: uid(), title, subject: x.subject, note: '', studiedOn: t, status: 'active', createdAt: Date.now(), taskId: x.id };
-    touch('item', it);
-    db.items.push(it);
-    ids.push(it.id);
-  }
+  const ids = wantsReview(x) ? makeTaskItems(x, t) : [];
   x.doneOn = t; x.itemIds = ids;
   touch('task', x);
   save();
   if (ids.length) toast(`끝! 복습 ${ids.length}개 시작`, () => dropTaskReview(x), '복습 빼기'); // 잘못 켜 뒀을 때 바로 뺄 수 있게
   else toast('끝!');
 }
+// 할 일 범위를 나눠 복습 항목 만들기 (공부한 날 = on)
+function makeTaskItems(x, on) {
+  return expandRange(x.title).map((title) => {
+    const it = { id: uid(), title, subject: x.subject, note: '', studiedOn: on, status: 'active', createdAt: Date.now(), taskId: x.id };
+    touch('item', it);
+    db.items.push(it);
+    return it.id;
+  });
+}
+const reviewedIds = () => new Set(db.logs.filter((l) => l.kind === 'review' && !l.deleted).map((l) => l.itemId));
+// 복습 빼기: 아직 복습 안 한 항목만 지움 (복습한 건 기록이 있으니 남김). 지운 항목을 돌려줌
 function dropTaskReview(x) {
-  for (const it of taskItems(x)) { it.status = 'deleted'; touch('item', it); }
-  x.itemIds = []; x.review = false;
+  const done = reviewedIds();
+  const dropped = taskItems(x).filter((it) => !done.has(it.id));
+  for (const it of dropped) { it.status = 'deleted'; touch('item', it); }
+  x.itemIds = taskItems(x).map((it) => it.id);
+  x.review = false;
   touch('task', x);
   save();
+  return dropped;
+}
+// 끝낸 할 일의 복습 표시를 눌렀을 때: 켜면 끝낸 날 기준으로 복습을 잡고, 끄면 뺌
+function toggleDoneTaskReview(x) {
+  if (!taskItems(x).length) {
+    x.itemIds = makeTaskItems(x, x.doneOn);
+    x.review = true;
+    touch('task', x);
+    save();
+    toast(`복습 ${x.itemIds.length}개 시작`, () => dropTaskReview(x));
+    return;
+  }
+  const dropped = dropTaskReview(x);
+  const kept = taskItems(x).length;
+  toast(kept ? `복습 뺐어요 · 이미 복습한 ${kept}개는 남겨 둠` : '복습 뺐어요', dropped.length ? () => {
+    for (const it of dropped) { it.status = 'active'; touch('item', it); }
+    x.itemIds = [...x.itemIds, ...dropped.map((it) => it.id)];
+    x.review = true;
+    touch('task', x);
+    save();
+  } : null);
 }
 // 체크 풀기: 만든 항목도 지움 (이미 복습한 항목은 기록이 있으니 남김)
 function uncheckTask(id) {
   const x = findTask(id);
   if (!x || !x.doneOn) return;
-  const reviewed = new Set(db.logs.filter((l) => l.kind === 'review' && !l.deleted).map((l) => l.itemId));
+  const reviewed = reviewedIds();
   for (const it of taskItems(x)) if (!reviewed.has(it.id)) { it.status = 'deleted'; touch('item', it); }
   x.doneOn = null; x.itemIds = [];
   touch('task', x);
   save();
   toast('체크를 풀었어요');
 }
+const flipReview = (x) => (x.doneOn ? toggleDoneTaskReview(x) : setTaskReview(x, !wantsReview(x)));
 function setTaskReview(x, on) {
   if (x.doneOn || wantsReview(x) === on) return;
   x.review = on;
@@ -345,17 +375,20 @@ function taskHTML(x, t) {
   const done = !!x.doneOn;
   const n = done ? taskItems(x).length : 0;
   const late = !done && x.on < t ? diffDays(t, x.on) : 0;
-  const sub = done ? (n ? `복습 ${n}개 시작` : '복습 안 함')
-    : late ? `${late === 1 ? '어제' : fmt(x.on)} 못 한 것` : '';
+  const sub = !done && late ? `${late === 1 ? '어제' : fmt(x.on)} 못 한 것` : '';
   return `<li class="task${done ? ' done' : ''}" data-task="${x.id}">
     <button type="button" class="tbox" data-check="1" aria-label="${done ? '체크 풀기' : '끝냄'}">${done ? '✓' : ''}</button>
     <div class="tb"><div class="tt">${esc(x.title)}</div>${sub ? `<div class="meta${late ? ' carry' : ''}">${sub}</div>` : ''}</div>
-    <div class="side">${done ? '' : rvHTML(x)}${tagHTML(x.subject)}<button type="button" class="more" data-tedit="1" aria-label="고치기">⋯</button></div></li>`;
+    <div class="side">${rvHTML(x, n)}${tagHTML(x.subject)}<button type="button" class="more" data-tedit="1" aria-label="고치기">⋯</button></div></li>`;
 }
 // 끝내기 전 할 일: 복습 켬/끔 (눌러서 바꿈)
-function rvHTML(x) {
-  const on = wantsReview(x);
-  return `<button type="button" class="rv${on ? ' on' : ''}" data-rv="1" aria-pressed="${on}" title="끝내면 복습을 ${on ? '잡아요' : '안 잡아요'} · 눌러서 바꾸기">${on ? '↻ 복습' : '복습 안 함'}</button>`;
+// 끝낸 할 일: 복습이 잡혔는지 (눌러서 잡기/빼기)
+function rvHTML(x, n) {
+  const done = !!x.doneOn;
+  const on = done ? n > 0 : wantsReview(x);
+  const label = on ? (done ? `↻ 복습 ${n}개` : '↻ 복습') : '복습 안 함';
+  const tip = done ? (on ? '눌러서 복습 빼기' : '눌러서 복습 잡기') : `끝내면 복습을 ${on ? '잡아요' : '안 잡아요'} · 눌러서 바꾸기`;
+  return `<button type="button" class="rv${on ? ' on' : ''}" data-rv="1" aria-pressed="${on}" title="${tip}">${label}</button>`;
 }
 
 function renderPlan(t) {
@@ -686,6 +719,7 @@ $('#today-list').onclick = (e) => {
 };
 $('#cal-day-list').onclick = (e) => {
   const task = e.target.closest('[data-task]')?.dataset.task;
+  if (task && e.target.closest('[data-rv]')) { const x = findTask(task); if (x) { flipReview(x); render(); } return; }
   if (task) { openTaskEditor(task); return; }
   const item = e.target.closest('[data-item]')?.dataset.item;
   if (item) { openEditor(item); return; }
@@ -727,7 +761,7 @@ $('#plan-list').onclick = (e) => {
   if (e.target.closest('[data-tedit]')) { openTaskEditor(row.dataset.task); return; }
   const x = findTask(row.dataset.task);
   if (!x) return;
-  if (e.target.closest('[data-rv]')) { setTaskReview(x, !wantsReview(x)); render(); return; }
+  if (e.target.closest('[data-rv]')) { flipReview(x); render(); return; }
   if (x.doneOn) uncheckTask(x.id); else completeTask(x.id);
   render();
 };
