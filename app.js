@@ -1,6 +1,6 @@
 import {
   DEFAULT_SETTINGS, localDate, addDays, diffDays, computeAll, todayQueue,
-  spreadOverflow, projectDates, parseQuickInput, expandRange, RATING, isWeak, weakScore, subjectSummary,
+  spreadOverflow, projectDates, parseQuickInput, expandRange, guessReview, RATING, isWeak, weakScore, subjectSummary,
 } from './scheduler.js';
 import { emptyDb, migrate, markDirty, markAllDirty } from './merge.js';
 import * as sync from './sync.js';
@@ -122,14 +122,19 @@ function setPlanOn(d) { planOn = d && d > today() ? d : null; planOnSetDay = tod
 function addTasks(text) {
   const parsed = parseQuickInput(text, ui.subject || '기타', { expand: false });
   const on = planDate();
+  let noReview = 0;
   for (const p of parsed) {
-    const x = { id: uid(), title: p.title, subject: p.subject, on, doneOn: null, itemIds: [], status: 'active', createdAt: Date.now() };
+    const review = guessReview(p.title);
+    if (!review) noReview++;
+    const x = { id: uid(), title: p.title, subject: p.subject, on, review, doneOn: null, itemIds: [], status: 'active', createdAt: Date.now() };
     touch('task', x);
     db.tasks.push(x);
   }
   save();
-  return parsed.length;
+  return { n: parsed.length, noReview };
 }
+// 예전에 만든 할 일(review 없음)은 복습함으로 침
+const wantsReview = (x) => x.review !== false;
 const findTask = (id) => db.tasks.find((x) => x.id === id && x.status === 'active');
 // 끝낸 할 일로 만든 항목 중 아직 남아 있는 것
 const taskItems = (x) => (x.itemIds || []).map((id) => db.items.find((i) => i.id === id)).filter((i) => i && i.status === 'active');
@@ -143,7 +148,7 @@ function completeTask(id) {
   if (!x || x.doneOn) return;
   const t = today();
   const ids = [];
-  for (const title of expandRange(x.title)) {
+  if (wantsReview(x)) for (const title of expandRange(x.title)) {
     const it = { id: uid(), title, subject: x.subject, note: '', studiedOn: t, status: 'active', createdAt: Date.now(), taskId: x.id };
     touch('item', it);
     db.items.push(it);
@@ -152,12 +157,12 @@ function completeTask(id) {
   x.doneOn = t; x.itemIds = ids;
   touch('task', x);
   save();
-  // 모의고사처럼 복습할 필요 없는 일은 바로 뺄 수 있게
-  toast(`끝! 복습 ${ids.length}개 시작`, () => dropTaskReview(x), '복습 빼기');
+  if (ids.length) toast(`끝! 복습 ${ids.length}개 시작`, () => dropTaskReview(x), '복습 빼기'); // 잘못 켜 뒀을 때 바로 뺄 수 있게
+  else toast('끝!');
 }
 function dropTaskReview(x) {
   for (const it of taskItems(x)) { it.status = 'deleted'; touch('item', it); }
-  x.itemIds = [];
+  x.itemIds = []; x.review = false;
   touch('task', x);
   save();
 }
@@ -171,6 +176,12 @@ function uncheckTask(id) {
   touch('task', x);
   save();
   toast('체크를 풀었어요');
+}
+function setTaskReview(x, on) {
+  if (x.doneOn || wantsReview(x) === on) return;
+  x.review = on;
+  touch('task', x);
+  save();
 }
 function removeTask(id) {
   const x = findTask(id);
@@ -339,7 +350,12 @@ function taskHTML(x, t) {
   return `<li class="task${done ? ' done' : ''}" data-task="${x.id}">
     <button type="button" class="tbox" data-check="1" aria-label="${done ? '체크 풀기' : '끝냄'}">${done ? '✓' : ''}</button>
     <div class="tb"><div class="tt">${esc(x.title)}</div>${sub ? `<div class="meta${late ? ' carry' : ''}">${sub}</div>` : ''}</div>
-    <div class="side">${tagHTML(x.subject)}<button type="button" class="more" data-tedit="1" aria-label="고치기">⋯</button></div></li>`;
+    <div class="side">${done ? '' : rvHTML(x)}${tagHTML(x.subject)}<button type="button" class="more" data-tedit="1" aria-label="고치기">⋯</button></div></li>`;
+}
+// 끝내기 전 할 일: 복습 켬/끔 (눌러서 바꿈)
+function rvHTML(x) {
+  const on = wantsReview(x);
+  return `<button type="button" class="rv${on ? ' on' : ''}" data-rv="1" aria-pressed="${on}" title="끝내면 복습을 ${on ? '잡아요' : '안 잡아요'} · 눌러서 바꾸기">${on ? '↻ 복습' : '복습 안 함'}</button>`;
 }
 
 function renderPlan(t) {
@@ -645,9 +661,10 @@ $('#quick-form').onsubmit = (e) => {
   if (!qi.value.trim()) return;
   if (mode() === 'plan') {
     const on = planDate();
-    const n = addTasks(qi.value);
+    const { n, noReview } = addTasks(qi.value);
     qi.value = ''; qi.style.height = 'auto';
-    toast(on === today() ? `오늘 할 일 ${n}개 추가` : `${fmt(on)} (${dow(on)}) 할 일 ${n}개 추가 · 달력에서 보여요`);
+    const extra = noReview ? ` · ${noReview === n ? '' : noReview + '개는 '}복습 안 함` : '';
+    toast((on === today() ? `오늘 할 일 ${n}개 추가` : `${fmt(on)} (${dow(on)}) 할 일 ${n}개 추가 · 달력에서 보여요`) + extra);
     render();
     return;
   }
@@ -710,6 +727,7 @@ $('#plan-list').onclick = (e) => {
   if (e.target.closest('[data-tedit]')) { openTaskEditor(row.dataset.task); return; }
   const x = findTask(row.dataset.task);
   if (!x) return;
+  if (e.target.closest('[data-rv]')) { setTaskReview(x, !wantsReview(x)); render(); return; }
   if (x.doneOn) uncheckTask(x.id); else completeTask(x.id);
   render();
 };
@@ -735,6 +753,8 @@ function openTaskEditor(id) {
     ? `${fmt(x.doneOn)} 끝냄 · ${n ? `복습 ${n}개 시작함 (복습 항목은 따로 고쳐요)` : '복습 안 함'}`
     : x.on < t ? `${fmt(x.on)}에 하려던 일이에요` : '';
   $('#tk-tomorrow').classList.toggle('hidden', !!x.doneOn);
+  $('#tk-review-label').classList.toggle('hidden', !!x.doneOn);
+  $('#tk-review').checked = wantsReview(x);
   tdlg.showModal();
   document.activeElement?.blur();
 }
@@ -750,7 +770,8 @@ $('#task-form').onsubmit = (e) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return toast('할 날을 고르세요');
     next.on = d;
   }
-  if (Object.keys(next).some((k) => x[k] !== next[k])) { Object.assign(x, next); touch('task', x); save(); toast('고쳤어요'); }
+  if (!x.doneOn) next.review = $('#tk-review').checked;
+  if (Object.keys(next).some((k) => (k === 'review' ? wantsReview(x) : x[k]) !== next[k])) { Object.assign(x, next); touch('task', x); save(); toast('고쳤어요'); }
   tdlg.close();
   render();
 };

@@ -192,6 +192,15 @@ export function expandRange(title) {
   return out || [title];
 }
 
+// 할 일을 끝냈을 때 복습을 잡을지 제목으로 짐작 (사용자가 바꿀 수 있음)
+// 문제 풀기·모의고사는 푸는 것 자체가 복습 대상이 아님. 단, 오답은 복습함
+const NO_REVIEW = /모의고사|모고|기출|문제|풀이|채점|실전|동형|하프|테스트/i;
+export function guessReview(title) {
+  const s = String(title || '');
+  if (/오답|틀린/.test(s)) return true;
+  return !NO_REVIEW.test(s);
+}
+
 // expand=false: 범위를 나누지 않음 (할 일은 '3~5장' 한 줄로 두고, 끝냈을 때 나눔)
 export function parseQuickInput(text, fallbackSubject = '기타', { expand = true } = {}) {
   return text

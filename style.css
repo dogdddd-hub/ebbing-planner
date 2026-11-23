@@ -249,3 +249,9 @@ button.wide { width: 100%; margin-top: 10px; }
 /* 오늘 한 것 */
 .done-box .sub-h { margin: 10px 0 4px; }
 .done-row.click { cursor: pointer; }
+/* 할 일: 끝내면 복습 잡을지 (눌러서 바꿈) */
+.task .rv { font-size: 11px; line-height: 1.6; padding: 0 7px; border-radius: 99px; white-space: nowrap;
+  background: transparent; border: 1px dashed var(--line); color: var(--sub); }
+.task .rv.on { border: 1px solid #34508f; color: #9db6ff; }
+.tk-review { margin: 2px 0 10px; }
+.tk-review .hint { font-size: 12px; }

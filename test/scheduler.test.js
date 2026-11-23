@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DEFAULT_SETTINGS as S, computeState, addDays, diffDays, localDate,
-  todayQueue, spreadOverflow, computeAll, parseQuickInput, projectDates, isWeak, subjectSummary,
+  todayQueue, spreadOverflow, computeAll, parseQuickInput, projectDates, isWeak, subjectSummary, guessReview,
 } from '../scheduler.js';
 
 const item = { id: 'a', studiedOn: '2026-11-01', status: 'active', createdAt: 1 };
@@ -150,4 +150,11 @@ test('알림용 과목별 개수', () => {
 test('할 일 입력은 범위를 나누지 않음', () => {
   const r = parseQuickInput('행정법 3~5장 #행정법\n영어 단어', '기타', { expand: false });
   assert.deepEqual(r, [{ title: '행정법 3~5장', subject: '행정법' }, { title: '영어 단어', subject: '기타' }]);
+});
+
+test('할 일 복습 짐작: 문제 풀기·모의고사는 복습 안 함, 오답은 복습', () => {
+  for (const t of ['요플 올인원 1강~6강', '행정법 3~5장', '영어 단어 Day 1~3', '국어 회독']) assert.equal(guessReview(t), true, t);
+  for (const t of ['행정법 모의고사 3회', '국어 기출 2019', '영어 문제풀이 30문항', '하프 모의 5회', '동형 2회 채점']) assert.equal(guessReview(t), false, t);
+  assert.equal(guessReview('행정법 모의고사 3회 오답'), true);
+  assert.equal(guessReview('기출 틀린 문제 정리'), true);
 });
