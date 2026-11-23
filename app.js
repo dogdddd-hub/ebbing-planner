@@ -20,6 +20,7 @@ let db = load();
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(db)); }
   catch (e) { toast('저장 실패: 저장 공간을 확인하세요'); }
+  window.desktop?.backup?.(); // PC 앱: 백업 파일도 고쳐 쓰기
   if (db.sync.dirty.length) scheduleSync(1500);
 }
 // 기록을 고칠 때: 수정 시각을 찍고 동기화 대상으로 표시
@@ -951,6 +952,7 @@ $('#import-file').onchange = async (e) => {
 };
 $('#reset-btn').onclick = () => {
   if (!confirm('이 기기의 모든 데이터를 지웁니다. 먼저 내보내기 하셨나요?' + (syncUser ? '\n(로그인 중이면 서버의 기록을 다시 받아옵니다)' : ''))) return;
+  window.desktop?.clearBackup?.();
   localStorage.removeItem(KEY); db = load(); render(); toast('초기화됨');
 };
 

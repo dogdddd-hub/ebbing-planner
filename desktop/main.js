@@ -153,6 +153,34 @@ ipcMain.on('planner:report', (e, r) => {
   checkSlots();
 });
 
+// ---------- 백업 파일 (preload.js 참고) ----------
+const backupPath = () => path.join(app.getPath('userData'), 'backup.json');
+const BACKUP_KEYS = ['ebbing-planner-v1', 'ebbing-planner-ui', 'ebbing-planner-auth'];
+const fromApp = (e) => (e.senderFrame?.url || '').startsWith('app://planner/');
+let lastBackup = '';
+ipcMain.on('planner:backup-read', (e) => {
+  if (!fromApp(e)) { e.returnValue = null; return; }
+  try { e.returnValue = JSON.parse(fs.readFileSync(backupPath(), 'utf8')); } catch { e.returnValue = null; }
+});
+ipcMain.on('planner:backup-write', (e, o) => {
+  if (!fromApp(e) || !o || typeof o['ebbing-planner-v1'] !== 'string') return;
+  const clean = {};
+  for (const k of BACKUP_KEYS) if (typeof o[k] === 'string') clean[k] = o[k];
+  const s = JSON.stringify(clean);
+  if (s === lastBackup || s.length > 20e6) return;
+  try {
+    // 쓰다가 꺼져도 예전 백업이 남게: 임시 파일에 쓰고 바꿔치기
+    fs.writeFileSync(backupPath() + '.tmp', s);
+    fs.renameSync(backupPath() + '.tmp', backupPath());
+    lastBackup = s;
+  } catch (err) { logError(err); }
+});
+ipcMain.on('planner:backup-clear', (e) => {
+  if (!fromApp(e)) return;
+  try { fs.unlinkSync(backupPath()); } catch {}
+  lastBackup = '';
+});
+
 // ---------- 시작 ----------
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
